@@ -20,7 +20,7 @@ import html
 import time
 import zipfile
 import logging
-from typing import List, Set
+from typing import List, Set, Optional, Dict, Any, Tuple
 
 import streamlit as st
 
@@ -469,11 +469,21 @@ if active_context and active_context.get("segments"):
         "para registrar su procedencia exacta (sección, página y número de párrafo)."
     )
 
+    # Callbacks de marcado nativos de Streamlit (actualizan estado antes del ciclo de renderizado)
+    def _toggle_mark_seg(seg_id: int, p_idx: Optional[int] = None):
+        if seg_id in st.session_state.marked_ids:
+            st.session_state.marked_ids.discard(seg_id)
+        else:
+            st.session_state.marked_ids.add(seg_id)
+        if p_idx is not None:
+            st.session_state.selected_paragraph_idx = p_idx
+
+    # Pestañas con títulos estáticos para evitar que React desmonte el árbol al marcar
     tab_preview, tab_inspector, tab_reports, tab_citations = st.tabs([
         "📖 Previsualización del Paper Traducido",
         "🔬 Inspector de Procedencia y Edición",
         "📊 Reporte Ejecutivo de Traducción",
-        f"📚 Canasta de Citas Seleccionadas ({len(marked_segs)})",
+        "📚 Canasta de Citas Seleccionadas",
     ])
 
     # --------------------------------------------------------------------------
@@ -488,8 +498,27 @@ if active_context and active_context.get("segments"):
 
         if view_mode == "Lienzo de Lectura Académica":
             st.caption("Lectura estructurada del paper traducido. Las citas [1] y (Autor, Año) se resaltan con color, y los párrafos marcados se destacan en amarillo con su nota de origen.")
+
+            # Paginación fluida para documentos extensos (evita sobrecarga del DOM y permite navegación instantánea)
+            PAGE_SIZE = 25
+            total_pages = max(1, (total_segs + PAGE_SIZE - 1) // PAGE_SIZE)
+            if total_pages > 1:
+                pag_c1, pag_c2, pag_c3 = st.columns([2, 5, 2])
+                with pag_c2:
+                    current_preview_page = st.selectbox(
+                        "Bloque de lectura del paper:",
+                        options=list(range(1, total_pages + 1)),
+                        format_func=lambda p: f"Página {p} de {total_pages} (Párrafos {(p-1)*PAGE_SIZE + 1} - {min(p*PAGE_SIZE, total_segs)} de {total_segs})",
+                        key="preview_page_selector",
+                    )
+                start_p_idx = (current_preview_page - 1) * PAGE_SIZE
+                end_p_idx = min(start_p_idx + PAGE_SIZE, total_segs)
+                visible_segments = list(enumerate(segments[start_p_idx:end_p_idx], start=start_p_idx))
+            else:
+                visible_segments = list(enumerate(segments))
+
             curr_sec = ""
-            for i, s in enumerate(segments):
+            for i, s in visible_segments:
                 if s.section != curr_sec and s.section:
                     curr_sec = s.section
                     st.markdown(f"### {curr_sec}")
@@ -498,33 +527,37 @@ if active_context and active_context.get("segments"):
                 text_to_show = s.translated or s.original
                 colored_html = highlight_citations_html(text_to_show, is_marked=is_m)
 
+                # Tarjeta de párrafo con estructura HTML uniforme y estable (previene errores de reconciliación React)
                 with st.container(border=True):
                     p_col1, p_col2 = st.columns([10, 2])
                     with p_col1:
                         if is_m:
-                            st.warning(f"⭐ **PÁRRAFO MARCADO PARA CITACIÓN** · `{s.short_provenance}`")
-                            st.markdown(
-                                f'<div style="font-size: 1.02rem; line-height: 1.65; color: #FEF08A;">{colored_html}</div>',
-                                unsafe_allow_html=True,
-                            )
-                            st.caption(f"📌 *{s.provenance_label}*")
+                            header_badge = f'<div style="background:#FDE047; color:#1E1B4B; font-weight:800; font-size:0.75rem; padding:3px 8px; border-radius:4px; display:inline-block; margin-bottom:8px;">⭐ MARCADO PARA CITACIÓN · {html.escape(s.short_provenance)}</div>'
+                            prov_foot = f'<div style="margin-top:8px; font-size:0.80rem; color:#FDE047; font-style:italic;">📌 {html.escape(s.provenance_label)}</div>'
+                            content_style = "font-size: 1.02rem; line-height: 1.65; color: #FEF08A;"
                         else:
-                            st.caption(f"🏷️ `{s.short_provenance}`")
-                            st.markdown(
-                                f'<div style="font-size: 0.98rem; line-height: 1.6; color: #F1F5F9;">{colored_html}</div>',
-                                unsafe_allow_html=True,
-                            )
+                            header_badge = f'<div style="color:#94A3B8; font-size:0.75rem; margin-bottom:6px;">🏷️ {html.escape(s.short_provenance)}</div>'
+                            prov_foot = ""
+                            content_style = "font-size: 0.98rem; line-height: 1.6; color: #F1F5F9;"
+
+                        st.markdown(
+                            f'{header_badge}'
+                            f'<div style="{content_style}">{colored_html}</div>'
+                            f'{prov_foot}',
+                            unsafe_allow_html=True,
+                        )
 
                     with p_col2:
                         btn_text = "❌ Quitar" if is_m else "⭐ Marcar"
                         btn_type = "secondary" if is_m else "primary"
-                        if st.button(btn_text, key=f"btn_prev_mark_{s.id}", use_container_width=True, type=btn_type):
-                            if is_m:
-                                st.session_state.marked_ids.remove(s.id)
-                            else:
-                                st.session_state.marked_ids.add(s.id)
-                            st.session_state.selected_paragraph_idx = i
-                            st.rerun()
+                        st.button(
+                            btn_text,
+                            key=f"btn_prev_mark_{s.id}",
+                            on_click=_toggle_mark_seg,
+                            args=(s.id, i),
+                            use_container_width=True,
+                            type=btn_type,
+                        )
 
         else:
             # Vista Bilingüe Sincronizada (Lado a Lado)
@@ -586,10 +619,10 @@ if active_context and active_context.get("segments"):
         sel_seg = segments[current_idx]
         is_sel_marked = (sel_seg.id in st.session_state.marked_ids)
 
-        # Ficha Destacada de Procedencia
+        # Ficha Destacada de Procedencia con estructura estable
         with st.container(border=True):
             if is_sel_marked:
-                st.warning("⭐ **PÁRRAFO MARCADO Y REGISTRADO PARA CITACIÓN / AUDITORÍA**", icon="📌")
+                st.markdown('<div style="background:#FDE047; color:#1E1B4B; font-weight:800; font-size:0.80rem; padding:4px 10px; border-radius:4px; display:inline-block; margin-bottom:8px;">⭐ PÁRRAFO MARCADO Y REGISTRADO PARA CITACIÓN / AUDITORÍA</div>', unsafe_allow_html=True)
             st.markdown(f"#### 📍 {sel_seg.provenance_label}")
             st.caption(
                 f"**Identificador:** `seg_id #{sel_seg.id}` &nbsp;|&nbsp; "
@@ -603,12 +636,14 @@ if active_context and active_context.get("segments"):
         btn_mark_col, btn_nav_col = st.columns([3, 3])
         with btn_mark_col:
             mark_btn_label = "❌ Quitar Selección (Desmarcar)" if is_sel_marked else "⭐ Marcar este Párrafo para Cita / Tesis"
-            if st.button(mark_btn_label, key=f"btn_inspector_mark_{sel_seg.id}", use_container_width=True, type="secondary" if is_sel_marked else "primary"):
-                if is_sel_marked:
-                    st.session_state.marked_ids.remove(sel_seg.id)
-                else:
-                    st.session_state.marked_ids.add(sel_seg.id)
-                st.rerun()
+            st.button(
+                mark_btn_label,
+                key=f"btn_inspector_mark_{sel_seg.id}",
+                on_click=_toggle_mark_seg,
+                args=(sel_seg.id,),
+                use_container_width=True,
+                type="secondary" if is_sel_marked else "primary",
+            )
 
         with btn_nav_col:
             nav1, nav2 = st.columns(2)
@@ -620,6 +655,7 @@ if active_context and active_context.get("segments"):
                 if st.button("Párrafo Siguiente ➡️", disabled=(current_idx >= total_segs - 1), use_container_width=True):
                     st.session_state.selected_paragraph_idx = min(total_segs - 1, current_idx + 1)
                     st.rerun()
+
 
         # Vista Paralela Bilingüe
         col_orig, col_trans = st.columns(2)

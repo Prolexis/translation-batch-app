@@ -505,63 +505,108 @@ def export_txt(segments: List[Segment], enriched: bool = False) -> bytes:
 
 def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
     """
-    Exporta a .DOCX con estructura académica fiel al formato del paper:
+    Exporta a .DOCX con estructura académica fiel al formato de paper científico:
       - Título centrado y destacado
-      - Encabezados con jerarquía (H1, H2)
-      - Abstract con sangría y cursiva
+      - Abstract en 1 columna con márgenes indentados y cursiva
+      - Cuerpo del paper en formato de DOS COLUMNAS (estándar IEEE/revista académica)
+      - Encabezados de sección (H1, H2)
       - Referencias bibliográficas formateadas
       - Resaltado y nota de procedencia si enriched=True
     """
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.enum.section import WD_SECTION
+
     doc = DocxDocument()
 
-    for s in segments:
+    # 1. Separar Título, Abstract y Cuerpo
+    title_segs = [s for s in segments if s.element_type == "title"]
+    abstract_segs = [s for s in segments if s.element_type == "abstract" or s.section.lower() in ["abstract", "resumen"]]
+    body_segs = [s for s in segments if s not in title_segs and s not in abstract_segs]
+
+    # Sección 1 (1 columna): Título y Resumen / Abstract
+    if title_segs:
+        for ts in title_segs:
+            p = doc.add_heading(ts.translated or ts.original, level=0)
+            p.paragraph_format.space_before = Pt(14)
+            p.paragraph_format.space_after = Pt(14)
+    elif segments:
+        # Si no hay title explícito, usar el primer segmento como título si es corto
+        first = segments[0]
+        p = doc.add_heading(first.translated or first.original, level=0)
+        p.paragraph_format.space_before = Pt(14)
+        p.paragraph_format.space_after = Pt(14)
+        if first in body_segs:
+            body_segs.remove(first)
+
+    # Abstract / Resumen
+    if abstract_segs:
+        for ab in abstract_segs:
+            text = ab.translated or ab.original
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.45)
+            p.paragraph_format.right_indent = Inches(0.45)
+            p.paragraph_format.space_before = Pt(6)
+            p.paragraph_format.space_after = Pt(12)
+            run_bold = p.add_run("RESUMEN — ")
+            run_bold.bold = True
+            run_bold.font.size = Pt(9.5)
+            clean_abs = re.sub(r"^(?:abstract|resumen)\s*[\:\—\-\.]*\s*", "", text, flags=re.I)
+            run_text = p.add_run(clean_abs)
+            run_text.italic = True
+            run_text.font.size = Pt(9.5)
+            if enriched and ab.is_marked:
+                run_text.font.highlight_color = WD_COLOR_INDEX.YELLOW
+
+    # Sección 2 (2 columnas para el cuerpo del artículo estilo IEEE)
+    body_section = doc.add_section(WD_SECTION.CONTINUOUS)
+    body_sectPr = body_section._sectPr
+    cols = body_sectPr.xpath('./w:cols')
+    if cols:
+        cols[0].set(qn('w:num'), '2')
+        cols[0].set(qn('w:space'), '720')  # 0.5 pulgada entre columnas
+    else:
+        col_elem = OxmlElement('w:cols')
+        col_elem.set(qn('w:num'), '2')
+        col_elem.set(qn('w:space'), '720')
+        body_sectPr.append(col_elem)
+
+    # Renderizar segmentos en las dos columnas
+    for s in body_segs:
         text = s.translated or s.original
         elem_type = s.element_type
 
-        if elem_type == "title":
-            p = doc.add_heading(text, level=0)
-            p.paragraph_format.space_before = Pt(12)
-            p.paragraph_format.space_after = Pt(14)
-        elif elem_type == "heading":
+        if elem_type == "heading":
             level = 2 if s.subsection else 1
             p = doc.add_heading(text, level=level)
-            p.paragraph_format.space_before = Pt(14)
-            p.paragraph_format.space_after = Pt(6)
-        elif elem_type == "abstract":
-            p = doc.add_paragraph()
-            p.paragraph_format.left_indent = Inches(0.4)
-            p.paragraph_format.right_indent = Inches(0.4)
-            p.paragraph_format.space_after = Pt(10)
-            run = p.add_run(text)
-            run.italic = True
-            run.font.size = Pt(10)
-            if enriched and s.is_marked:
-                run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+            p.paragraph_format.space_before = Pt(12)
+            p.paragraph_format.space_after = Pt(4)
         elif elem_type == "reference":
             p = doc.add_paragraph()
-            p.paragraph_format.left_indent = Inches(0.35)
-            p.paragraph_format.first_line_indent = Inches(-0.35)
-            p.paragraph_format.space_after = Pt(4)
+            p.paragraph_format.left_indent = Inches(0.3)
+            p.paragraph_format.first_line_indent = Inches(-0.3)
+            p.paragraph_format.space_after = Pt(3)
             run = p.add_run(text)
-            run.font.size = Pt(8.5)
+            run.font.size = Pt(8)
             if enriched and s.is_marked:
                 run.font.highlight_color = WD_COLOR_INDEX.YELLOW
         else:
             p = doc.add_paragraph()
-            p.paragraph_format.space_after = Pt(6)
+            p.paragraph_format.space_after = Pt(5)
+            p.paragraph_format.line_spacing = 1.15
             run = p.add_run(text)
-            run.font.size = Pt(10.5)
+            run.font.size = Pt(9.5)
             if enriched and s.is_marked:
                 run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
-        # Si está marcado y enriquecido, agregar nota de procedencia
-        if enriched and s.is_marked and elem_type not in ["title", "heading"]:
+        # Si está marcado y enriquecido, nota de procedencia
+        if enriched and s.is_marked and elem_type != "heading":
             prov_p = doc.add_paragraph()
-            prov_p.paragraph_format.left_indent = Inches(0.4)
-            prov_p.paragraph_format.space_after = Pt(8)
+            prov_p.paragraph_format.left_indent = Inches(0.2)
+            prov_p.paragraph_format.space_after = Pt(6)
             prov_run = prov_p.add_run(f"📌 Procedencia: {s.provenance_label}")
             prov_run.italic = True
-            prov_run.font.size = Pt(8.5)
+            prov_run.font.size = Pt(8)
             prov_run.font.color.rgb = RGBColor(79, 70, 229)
 
     buf = io.BytesIO()
@@ -571,88 +616,208 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
 
 def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     """
-    Exporta a .PDF con estructura y tipografía académica fiel al paper original:
-      - Título en tamaño 15pt bold
-      - Encabezados de sección en 12.5pt bold
-      - Abstract en 9.5pt cursiva con sangría
-      - Cuerpo en 10pt con interlineado óptimo
-      - Referencias en 8.5pt
-      - Cajas de resaltado y procedencia exacta si enriched=True
+    Exporta a .PDF en formato académico de DOS COLUMNAS (estilo IEEE / revista científica):
+      - Encabezado institucional / revista científica en la parte superior
+      - Título del paper centrado a ancho completo con tipografía destacada
+      - Abstract / Resumen en caja sombreada a ancho completo
+      - Línea divisoria decorativa
+      - Cuerpo del documento estructurado en DOS COLUMNAS con flujo balanceado
+      - Encabezados de sección (I. Introducción, etc.) y subsecciones estilizadas
+      - Citas in-text integradas
+      - Párrafos marcados con fondo amarillo suave (#FEF9C3) y nota de origen al pie
+      - Referencias en dos columnas con tipografía compacta
+      - Encabezado y número de página continuo en el pie de página
     """
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
-    margin = 2 * cm
-    max_width = width - 2 * margin
-    y = height - margin
 
-    def check_page_break(needed_space: float):
-        nonlocal y
-        if y - needed_space < margin:
-            c.showPage()
-            y = height - margin
+    margin = 38.0
+    col_gap = 18.0
+    col_width = (width - 2 * margin - col_gap) / 2
+    bottom_margin = 42.0
 
-    for s in segments:
+    # Separar Título, Abstract y Cuerpo
+    title_segs = [s for s in segments if s.element_type == "title"]
+    abstract_segs = [s for s in segments if s.element_type == "abstract" or s.section.lower() in ["abstract", "resumen"]]
+    body_segs = [s for s in segments if s not in title_segs and s not in abstract_segs]
+
+    title_text = ""
+    if title_segs:
+        title_text = title_segs[0].translated or title_segs[0].original
+    elif segments:
+        title_text = segments[0].translated or segments[0].original
+        if segments[0] in body_segs:
+            body_segs.remove(segments[0])
+
+    abstract_text = ""
+    if abstract_segs:
+        abstract_text = " ".join((s.translated or s.original) for s in abstract_segs)
+
+    # --------------------------------------------------------------------------
+    # PÁGINA 1: Encabezado superior, Título y Caja de Abstract
+    # --------------------------------------------------------------------------
+    # 1. Banner superior
+    c.setFont("Helvetica-Bold", 7.5)
+    c.setFillColorRGB(0.35, 0.38, 0.45)
+    c.drawString(margin, height - 26, "TRADUCCIÓN ACADÉMICA CON TRAZABILIDAD DE ORIGEN")
+    c.drawRightString(width - margin, height - 26, "REVISTA CIENTÍFICA · FORMATO IEEE")
+    c.setStrokeColorRGB(0.78, 0.82, 0.88)
+    c.setLineWidth(0.6)
+    c.line(margin, height - 30, width - margin, height - 30)
+
+    # 2. Título centrado
+    y = height - 52
+    c.setFont("Helvetica-Bold", 14.5)
+    c.setFillColorRGB(0.08, 0.10, 0.18)
+    title_lines = simpleSplit(title_text, "Helvetica-Bold", 14.5, width - 2 * margin - 10)
+    for tl in title_lines:
+        c.drawCentredString(width / 2, y, tl)
+        y -= 18
+
+    # 3. Subtítulo / Metadatos de procedencia
+    y -= 2
+    c.setFont("Helvetica", 8)
+    c.setFillColorRGB(0.40, 0.44, 0.52)
+    c.drawCentredString(width / 2, y, "Artículo Científico Traducido con Agentes de Inteligencia Artificial y Preservación de Citas")
+    y -= 12
+
+    # 4. Caja de Resumen / Abstract
+    if abstract_text:
+        clean_abs = re.sub(r"^(?:abstract|resumen)\s*[\:\—\-\.]*\s*", "", abstract_text, flags=re.I)
+        abs_full = "RESUMEN — " + clean_abs
+        c.setFont("Helvetica-Oblique", 8.2)
+        abs_lines = simpleSplit(abs_full, "Helvetica-Oblique", 8.2, width - 2 * margin - 22)
+        box_padding = 8
+        abs_box_height = len(abs_lines) * 11.2 + 2 * box_padding
+
+        # Fondo sombreado suave con borde tenue
+        c.saveState()
+        c.setFillColorRGB(0.96, 0.97, 0.99)
+        c.setStrokeColorRGB(0.80, 0.84, 0.90)
+        c.roundRect(margin, y - abs_box_height, width - 2 * margin, abs_box_height, 4, fill=1, stroke=1)
+        c.restoreState()
+
+        # Texto del Abstract
+        y_abs = y - box_padding - 8
+        c.setFillColorRGB(0.12, 0.14, 0.20)
+        for al in abs_lines:
+            c.drawString(margin + 11, y_abs, al)
+            y_abs -= 11.2
+
+        y -= abs_box_height + 14
+    else:
+        y -= 10
+
+    # Línea divisoria antes de iniciar las 2 columnas
+    c.setStrokeColorRGB(0.82, 0.85, 0.90)
+    c.setLineWidth(0.5)
+    c.line(margin, y, width - margin, y)
+    y -= 14
+
+    # --------------------------------------------------------------------------
+    # FLUJO DE DOS COLUMNAS PARA EL CUERPO Y REFERENCIAS
+    # --------------------------------------------------------------------------
+    col_top_y_p1 = y
+    page_num = 1
+    current_col = 0  # 0: izquierda, 1: derecha
+    curr_y = col_top_y_p1
+
+    def draw_running_header_footer(pg: int):
+        """Dibuja encabezado y pie de página."""
+        c.setFont("Helvetica", 7.5)
+        c.setFillColorRGB(0.42, 0.46, 0.54)
+        if pg > 1:
+            short_t = title_text[:60] + ("..." if len(title_text) > 60 else "")
+            c.drawString(margin, height - 24, short_t.upper())
+            c.drawRightString(width - margin, height - 24, f"Pág. {pg}")
+            c.setStrokeColorRGB(0.82, 0.85, 0.90)
+            c.setLineWidth(0.5)
+            c.line(margin, height - 28, width - margin, height - 28)
+        # Pie de página
+        c.drawCentredString(width / 2, 22, f"— Página {pg} —")
+
+    draw_running_header_footer(1)
+
+    for s in body_segs:
         text = s.translated or s.original
         elem_type = s.element_type
         is_marked = (enriched and s.is_marked)
 
-        # Configurar estilo según elemento académico
-        if elem_type == "title":
-            curr_font, curr_size, curr_leading = "Helvetica-Bold", 15, 19
-            extra_indent = 0
-            spacing_after = 14
-        elif elem_type == "heading":
-            curr_font, curr_size, curr_leading = "Helvetica-Bold", 12.5, 16
-            extra_indent = 0
-            spacing_after = 8
-        elif elem_type == "abstract":
-            curr_font, curr_size, curr_leading = "Helvetica-Oblique", 9.5, 13.5
-            extra_indent = 16
-            spacing_after = 10
+        # Configuración tipográfica según jerarquía del paper
+        if elem_type == "heading":
+            is_sub = bool(s.subsection)
+            font_name = "Helvetica-BoldOblique" if is_sub else "Helvetica-Bold"
+            font_size = 8.8 if is_sub else 10.0
+            leading = 12.0 if is_sub else 13.5
+            space_before = 8.0 if is_sub else 11.0
+            space_after = 4.0
+            text_color = (0.15, 0.20, 0.35)
         elif elem_type == "reference":
-            curr_font, curr_size, curr_leading = "Helvetica", 8.5, 11
-            extra_indent = 8
-            spacing_after = 5
+            font_name = "Helvetica"
+            font_size = 7.5
+            leading = 9.8
+            space_before = 2.0
+            space_after = 3.0
+            text_color = (0.18, 0.20, 0.25)
         else:
-            curr_font, curr_size, curr_leading = "Helvetica", 10, 14
-            extra_indent = 0
-            spacing_after = 8
+            font_name = "Helvetica"
+            font_size = 8.6
+            leading = 11.6
+            space_before = 2.0
+            space_after = 5.0
+            text_color = (0.08, 0.08, 0.10)
 
-        avail_width = max_width - extra_indent - (16 if is_marked else 0)
-        lines = simpleSplit(text, curr_font, curr_size, avail_width)
+        avail_w = col_width - (10 if is_marked else 0)
+        lines = simpleSplit(text, font_name, font_size, avail_w)
         if not lines:
             continue
 
-        prov_leading = 10
-        block_height = len(lines) * curr_leading + (prov_leading + 10 if is_marked else 0) + spacing_after
+        prov_leading = 9.5
+        needed_height = space_before + (len(lines) * leading) + (prov_leading + 8 if is_marked else 0) + space_after
 
-        check_page_break(block_height)
+        # Comprobar si cabe en la columna actual
+        if curr_y - needed_height < bottom_margin:
+            if current_col == 0:
+                # Pasar a la columna derecha en la misma página
+                current_col = 1
+                curr_y = col_top_y_p1 if page_num == 1 else (height - margin - 18)
+            else:
+                # Saltar de página
+                c.showPage()
+                page_num += 1
+                draw_running_header_footer(page_num)
+                current_col = 0
+                curr_y = height - margin - 18
 
-        # Si está marcado, dibujar recuadro de resaltado
+        col_x = margin if current_col == 0 else (margin + col_width + col_gap)
+        curr_y -= space_before
+
+        # Resaltado visual si el párrafo fue marcado por el usuario
         if is_marked:
             c.saveState()
-            c.setFillColorRGB(1.0, 0.96, 0.76)  # Amarillo #FFF3C4
-            c.setStrokeColorRGB(0.92, 0.70, 0.10)  # Borde ámbar
-            c.roundRect(margin + extra_indent - 4, y - (len(lines) * curr_leading) - 4, avail_width + 8, (len(lines) * curr_leading) + 14, 4, fill=1, stroke=1)
+            c.setFillColorRGB(1.0, 0.96, 0.78)  # Amarillo suave #FFF4C6
+            c.setStrokeColorRGB(0.92, 0.70, 0.12)  # Borde ámbar #EAB308
+            box_h = (len(lines) * leading) + prov_leading + 10
+            c.roundRect(col_x - 3, curr_y - box_h + leading, col_width + 6, box_h, 3, fill=1, stroke=1)
             c.restoreState()
 
-        # Renderizar texto
-        c.setFont(curr_font, curr_size)
-        c.setFillColorRGB(0.08, 0.08, 0.12)
+        # Dibujar líneas del párrafo
+        c.setFont(font_name, font_size)
+        c.setFillColorRGB(*text_color)
         for line in lines:
-            c.drawString(margin + extra_indent + (6 if is_marked else 0), y, line)
-            y -= curr_leading
+            c.drawString(col_x + (4 if is_marked else 0), curr_y, line)
+            curr_y -= leading
 
-        # Nota de procedencia si está marcado
+        # Dibujar nota de procedencia exacta al pie del párrafo marcado
         if is_marked:
-            y -= 2
-            c.setFont("Helvetica-Oblique", 8)
-            c.setFillColorRGB(0.26, 0.23, 0.72)
-            c.drawString(margin + extra_indent + 8, y, f"[Procedencia: {s.provenance_label}]")
-            y -= prov_leading + 4
+            curr_y -= 1
+            c.setFont("Helvetica-Oblique", 7.2)
+            c.setFillColorRGB(0.26, 0.22, 0.75)  # Índigo académico
+            c.drawString(col_x + 5, curr_y, f"[📌 Origen: {s.provenance_label}]")
+            curr_y -= prov_leading + 3
 
-        y -= spacing_after
+        curr_y -= space_after
 
     c.save()
     return buf.getvalue()
