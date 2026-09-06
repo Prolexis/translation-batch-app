@@ -968,13 +968,24 @@ src_label = LANGUAGE_OPTIONS_SOURCE.get(source_lang, source_lang)
 tgt_label = LANGUAGE_OPTIONS_TARGET.get(target_lang, target_lang)
 st.info(f"🌐 **Ruta de traducción activa:** {src_label} ➔ **{tgt_label}** *(Modifícala en la barra lateral izquierda si deseas otro idioma destino)*")
 
-run_col1, run_col2 = st.columns([1, 3])
+run_col1, run_col2, run_col3 = st.columns([2, 2, 2])
 with run_col1:
     start_clicked = st.button(
         "🚀 Procesar lote",
         disabled=st.session_state.processing or not st.session_state.uploaded_map,
         use_container_width=True,
+        type="primary",
     )
+with run_col2:
+    if st.button("🗑️ Limpiar todo / Nuevo lote", disabled=st.session_state.processing, use_container_width=True):
+        st.session_state.files_status.clear()
+        st.session_state.results.clear()
+        st.session_state.uploaded_map.clear()
+        st.session_state.edited_texts.clear()
+        for k in list(st.session_state.keys()):
+            if str(k).startswith("edit_") or str(k).startswith("download_"):
+                del st.session_state[k]
+        st.rerun()
 
 if start_clicked:
     if not api_key_input:

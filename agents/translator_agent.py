@@ -11,7 +11,7 @@ Rol     : envuelve el LLM Gemini (vía LangChain `ChatGoogleGenerativeAI`) en
 """
 
 import logging
-from typing import List
+from typing import List, Optional, Callable
 
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
