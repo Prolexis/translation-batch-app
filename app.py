@@ -18,6 +18,7 @@ import os
 import re
 import html
 import time
+import base64
 import zipfile
 import logging
 from typing import List, Set, Optional, Dict, Any, Tuple
@@ -422,51 +423,114 @@ if active_context and active_context.get("segments"):
     marked_segs = [s for s in segments if s.is_marked]
 
     st.markdown("---")
-    st.markdown("### 📥 1. Descarga Inmediata de la Traducción Completa")
-    st.caption("El paper ha sido traducido completamente. Descárgalo de inmediato en los formatos estándar:")
+    st.markdown("### 📄 1. Previsualización del Paper Traducido y Descarga Inmediata")
+    st.caption("Examina el documento maquetado tal cual el paper original antes de descargarlo en tu formato preferido:")
 
-    # Descargas Directas Inmediatas
-    dl_col1, dl_col2, dl_col3, dl_col4 = st.columns(4)
+    # Generar binarios de exportación
+    pdf_bytes = export_segments(segments, "pdf", enriched=False)
+    docx_bytes = export_segments(segments, "docx", enriched=False)
+    txt_bytes = export_segments(segments, "txt", enriched=False)
+    b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
+
+    # Botonera de Descarga Destacada
+    dl_col1, dl_col2, dl_col3, dl_col4 = st.columns([3, 3, 2, 2])
     with dl_col1:
-        docx_bytes = export_segments(segments, "docx", enriched=False)
         st.download_button(
-            label="⬇️ Descargar .DOCX Completo",
-            data=docx_bytes,
-            file_name=f"{active_fname.rsplit('.', 1)[0]}_traducido.docx",
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            use_container_width=True,
-            type="primary",
-        )
-    with dl_col2:
-        pdf_bytes = export_segments(segments, "pdf", enriched=False)
-        st.download_button(
-            label="⬇️ Descargar .PDF Completo",
+            label="⬇️ Descargar .PDF (2 Col. IEEE)",
             data=pdf_bytes,
             file_name=f"{active_fname.rsplit('.', 1)[0]}_traducido.pdf",
             mime="application/pdf",
             use_container_width=True,
             type="primary",
         )
-    with dl_col3:
-        txt_bytes = export_segments(segments, "txt", enriched=False)
+    with dl_col2:
         st.download_button(
-            label="⬇️ Descargar .TXT Completo",
+            label="⬇️ Descargar .DOCX (2 Columnas)",
+            data=docx_bytes,
+            file_name=f"{active_fname.rsplit('.', 1)[0]}_traducido.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            use_container_width=True,
+            type="primary",
+        )
+    with dl_col3:
+        st.download_button(
+            label="⬇️ Descargar .TXT",
             data=txt_bytes,
             file_name=f"{active_fname.rsplit('.', 1)[0]}_traducido.txt",
             mime="text/plain",
             use_container_width=True,
         )
     with dl_col4:
-        st.metric("Párrafos Traducidos", total_segs, help="Párrafos estructurados con procedencia")
+        st.metric("Párrafos", total_segs, help="Total de párrafos académicos estructurados")
+
+    # Contenedor de Previsualización Interactiva antes de descargar
+    with st.container(border=True):
+        p_mode = st.radio(
+            "Modo de previsualización antes de descargar:",
+            options=["📑 Visor PDF Interactivo (Maquetación Real en 2 Columnas)", "📜 Hoja de Paper Científico (Lectura Rápida con Citas Coloreadas)"],
+            horizontal=True,
+            key="pre_download_preview_selector",
+        )
+
+        if p_mode.startswith("📑 Visor PDF"):
+            st.caption("Visualiza el PDF generado directamente en tu navegador con maquetación de dos columnas, encabezados y abstract:")
+            pdf_embed_html = (
+                f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1&navpanes=0" '
+                f'width="100%" height="680px" '
+                f'style="border-radius:10px; border:1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.35); background:#1E293B;">'
+                f'</iframe>'
+            )
+            st.markdown(pdf_embed_html, unsafe_allow_html=True)
+        else:
+            # Hoja de Paper Científico (Simulador de Paper Real en HTML/CSS)
+            st.caption("Previsualización estructurada con título, abstract enmarcado y citas resaltadas con color:")
+
+            title_txt = next((s.translated or s.original for s in segments if s.element_type == "title"), segments[0].translated or segments[0].original)
+            abstract_txt = " ".join(s.translated or s.original for s in segments if s.element_type == "abstract" or s.section.lower() in ["abstract", "resumen"])
+
+            paper_sheet_html = [
+                '<div style="background: #0B0F19; border: 1px solid #1E293B; border-radius: 12px; padding: 28px 36px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); max-height: 600px; overflow-y: auto;">',
+                '<div style="text-align: center; font-size: 0.75rem; letter-spacing: 1.5px; color: #64748B; font-weight: 700; text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid #1E293B; padding-bottom: 8px;">REVISTA CIENTÍFICA · TRADUCCIÓN ACADÉMICA IEEE</div>',
+                f'<h2 style="text-align: center; color: #F8FAFC; font-size: 1.45rem; font-weight: 800; line-height: 1.35; margin: 16px 0 8px 0;">{html.escape(title_txt)}</h2>',
+                '<div style="text-align: center; color: #94A3B8; font-size: 0.85rem; margin-bottom: 20px;">Artículo Académico Traducido con Preservación de Citas Bibliográficas y Trazabilidad</div>',
+            ]
+
+            if abstract_txt:
+                clean_abs = re.sub(r"^(?:abstract|resumen)\s*[\:\—\-\.]*\s*", "", abstract_txt, flags=re.I)
+                abs_colored = highlight_citations_html(clean_abs, is_marked=False)
+                paper_sheet_html.append(
+                    f'<div style="background: rgba(30, 41, 59, 0.7); border: 1px solid #334155; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">'
+                    f'<strong style="color: #60A5FA; font-size: 0.88rem; letter-spacing: 0.5px;">RESUMEN — </strong>'
+                    f'<span style="font-style: italic; color: #CBD5E1; font-size: 0.90rem; line-height: 1.6;">{abs_colored}</span>'
+                    f'</div>'
+                )
+
+            paper_sheet_html.append('<div style="border-top: 1px solid #1E293B; padding-top: 16px;">')
+            for s in segments[:18]:
+                if s.element_type in ["title", "abstract"] or s.section.lower() in ["abstract", "resumen"]:
+                    continue
+                if s.element_type == "heading":
+                    paper_sheet_html.append(f'<h4 style="color: #93C5FD; margin-top: 16px; margin-bottom: 6px; font-size: 1.05rem; text-transform: uppercase;">{html.escape(s.translated or s.original)}</h4>')
+                elif s.element_type == "reference":
+                    paper_sheet_html.append(f'<div style="font-size: 0.78rem; color: #64748B; margin-bottom: 4px; padding-left: 14px; text-indent: -14px;">{html.escape(s.translated or s.original)}</div>')
+                else:
+                    c_txt = highlight_citations_html(s.translated or s.original, is_marked=s.is_marked)
+                    paper_sheet_html.append(f'<p style="color: #E2E8F0; font-size: 0.90rem; line-height: 1.65; margin-bottom: 12px;">{c_txt}</p>')
+
+            if len(segments) > 18:
+                paper_sheet_html.append(f'<div style="text-align: center; color: #64748B; font-size: 0.82rem; margin-top: 16px;">... y {len(segments) - 18} párrafos más. Explóralos todos o marca citas en la sección 2 a continuación.</div>')
+
+            paper_sheet_html.append('</div></div>')
+            st.markdown("".join(paper_sheet_html), unsafe_allow_html=True)
 
     # --------------------------------------------------------------------------
-    # 3. Previsualización Completa, Auditoría y Reportes
+    # 2. Trazabilidad de Origen, Marcado y Reportes
     # --------------------------------------------------------------------------
     st.markdown("---")
-    st.markdown("### 🔍 2. Previsualización de la Traducción, Auditoría y Reportes")
+    st.markdown("### 🔬 2. Trazabilidad de Origen, Marcado para Citas y Auditoría")
     st.caption(
-        "Revisa la traducción completa en pantalla, compara con el original en inglés, y marca cualquier párrafo "
-        "para registrar su procedencia exacta (sección, página y número de párrafo)."
+        "Revisa la correspondencia párrafo a párrafo, audita su procedencia exacta (sección, página y número) "
+        "y selecciona extractos para generar tu ficha de citación y versiones enriquecidas:"
     )
 
     # Callbacks de marcado nativos de Streamlit (actualizan estado antes del ciclo de renderizado)
