@@ -2,7 +2,7 @@
 
 <div align="center">
 
-[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/)
+[![Open in Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://translation-batch-app-ctletvzn6rlgmqv8cngwrl.streamlit.app/)
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
 [![Streamlit](https://img.shields.io/badge/Streamlit-1.38+-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
 [![LangChain](https://img.shields.io/badge/LangChain-LCEL-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://www.langchain.com/)
@@ -11,6 +11,8 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
 
 **Plataforma web de traducción inteligente de documentos por lotes (`.txt`, `.docx`, `.pdf`) con pipeline de agentes autónomos, verificación cruzada visual por colores y exportación masiva en ZIP.**
+
+👉 **[Probar la aplicación en vivo (Live Demo)](https://translation-batch-app-ctletvzn6rlgmqv8cngwrl.streamlit.app/)**
 
 </div>
 
