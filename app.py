@@ -409,11 +409,27 @@ class ExtractorAgent:
 
 
 # --- AGENTE 2: TRADUCTOR ---
+LANGUAGE_NAMES = {
+    "auto": "Detección automática (auto-detect original language)",
+    "es": "Español (Spanish)",
+    "en": "Inglés (English)",
+    "fr": "Francés (French)",
+    "de": "Alemán (German)",
+    "it": "Italiano (Italian)",
+    "pt": "Portugués (Portuguese)",
+    "zh": "Chino (Chinese)",
+    "ja": "Japonés (Japanese)",
+    "ru": "Ruso (Russian)",
+    "ar": "Árabe (Arabic)",
+}
+
 _SYSTEM_PROMPT = (
-    "Eres un traductor profesional. Traduce el texto del usuario al idioma '{target_lang}'. "
-    "Si el idioma origen es '{source_lang}' o 'auto', detecta e interpreta el contenido del original. "
-    "Devuelve ÚNICAMENTE la traducción al idioma '{target_lang}', sin notas explicativas, "
-    "sin comillas adicionales, preservando la estructura, saltos de línea y el formato original."
+    "Eres un traductor profesional experto. Tu única tarea es traducir el texto recibido al idioma objetivo: {target_name}.\n"
+    "El idioma de origen es: {source_name}.\n"
+    "Instrucciones estrictas:\n"
+    "1. Traduce fielmente todo el contenido al idioma {target_name}.\n"
+    "2. Devuelve ÚNICAMENTE el texto traducido, sin explicaciones, sin notas del traductor, sin introducciones y sin comillas adicionales.\n"
+    "3. Conserva exactamente la estructura de párrafos y saltos de línea del texto original."
 )
 
 _RETRY_SUFFIX = (
@@ -448,11 +464,13 @@ class TranslatorAgent:
 
     @with_backoff()
     def _translate_one(self, text: str, source_lang: str, target_lang: str, retry_reason: str = None) -> str:
+        source_name = LANGUAGE_NAMES.get(source_lang.lower().strip(), source_lang)
+        target_name = LANGUAGE_NAMES.get(target_lang.lower().strip(), target_lang)
         chain = self._build_chain(retry_reason=retry_reason)
         result = chain.invoke({
             "text": text,
-            "source_lang": source_lang,
-            "target_lang": target_lang,
+            "source_name": source_name,
+            "target_name": target_name,
         })
         return str(result).strip()
 
@@ -942,6 +960,10 @@ if st.session_state.uploaded_map:
     st.table(status_rows)
 
 # --- 2. Procesamiento del Lote ---
+src_label = LANGUAGE_OPTIONS_SOURCE.get(source_lang, source_lang)
+tgt_label = LANGUAGE_OPTIONS_TARGET.get(target_lang, target_lang)
+st.info(f"🌐 **Ruta de traducción activa:** {src_label} ➔ **{tgt_label}** *(Modifícala en la barra lateral izquierda si deseas otro idioma destino)*")
+
 run_col1, run_col2 = st.columns([1, 3])
 with run_col1:
     start_clicked = st.button(
