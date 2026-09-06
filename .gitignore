@@ -23,5 +23,6 @@ ENV/
 .DS_Store
 Thumbs.db
 
-# Output artifacts
+# Output artifacts & scratch
 *.log
+scratch/
