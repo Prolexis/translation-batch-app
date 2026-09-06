@@ -23,6 +23,7 @@ import html
 import time
 import random
 import logging
+import zipfile
 import threading
 import functools
 import traceback
@@ -789,6 +790,50 @@ STATUS_LABELS = {
     "error": "❌ Error",
 }
 
+LANGUAGE_OPTIONS_SOURCE = {
+    "auto": "🌐 Detección automática (auto)",
+    "es": "🇪🇸 Español (es)",
+    "en": "🇬🇧 Inglés (en)",
+    "fr": "🇫🇷 Francés (fr)",
+    "de": "🇩🇪 Alemán (de)",
+    "it": "🇮🇹 Italiano (it)",
+    "pt": "🇵🇹 Portugués (pt)",
+    "zh": "🇨🇳 Chino (zh)",
+    "ja": "🇯🇵 Japonés (ja)",
+    "ru": "🇷🇺 Ruso (ru)",
+    "ar": "🇸🇦 Árabe (ar)",
+}
+
+LANGUAGE_OPTIONS_TARGET = {
+    "es": "🇪🇸 Español (es)",
+    "en": "🇬🇧 Inglés (en)",
+    "fr": "🇫🇷 Francés (fr)",
+    "de": "🇩🇪 Alemán (de)",
+    "it": "🇮🇹 Italiano (it)",
+    "pt": "🇵🇹 Portugués (pt)",
+    "zh": "🇨🇳 Chino (zh)",
+    "ja": "🇯🇵 Japonés (ja)",
+    "ru": "🇷🇺 Ruso (ru)",
+    "ar": "🇸🇦 Árabe (ar)",
+}
+
+
+def create_batch_zip(results: dict, export_format: str) -> bytes:
+    """Empaqueta todos los archivos procesados con éxito en un único .zip."""
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+        for fname, context in results.items():
+            segments = context.get("segments", [])
+            if segments and not context.get("error"):
+                # Sincronizar con posibles ediciones manuales en session_state
+                for seg in segments:
+                    if (fname, seg.id) in st.session_state.edited_texts:
+                        seg.translated = st.session_state.edited_texts[(fname, seg.id)]
+                file_bytes_out = export_segments(segments, export_format)
+                out_name = fname.rsplit(".", 1)[0] + f".{export_format}"
+                zip_file.writestr(out_name, file_bytes_out)
+    return zip_buffer.getvalue()
+
 
 def init_session_state():
     st.session_state.setdefault("files_status", {})   # filename -> status str
@@ -804,21 +849,51 @@ init_session_state()
 with st.sidebar:
     st.header("⚙️ Configuración")
 
-    api_key_input = st.text_input(
-        "GEMINI_API_KEY",
-        value=settings.GEMINI_API_KEY,
-        type="password",
-        help="Introduce tu API Key de Google Gemini.",
-    )
+    # Gestión de GEMINI_API_KEY
+    env_api_key = settings.GEMINI_API_KEY.strip()
+    if env_api_key:
+        st.success("🔒 Clave API cargada del entorno (.env)")
+        with st.expander("🔑 Cambiar API Key para esta sesión"):
+            override_key = st.text_input(
+                "Nueva GEMINI_API_KEY (opcional)",
+                value="",
+                type="password",
+                help="Deja este campo en blanco para usar la clave cargada del .env.",
+            )
+        api_key_input = override_key.strip() if override_key.strip() else env_api_key
+    else:
+        api_key_input = st.text_input(
+            "GEMINI_API_KEY (Obligatorio)",
+            value="",
+            type="password",
+            help="Introduce tu API Key de Google Gemini.",
+        )
+        if not api_key_input:
+            st.warning("⚠️ Debes ingresar tu GEMINI_API_KEY para poder procesar.")
+
     col_a, col_b = st.columns(2)
+    source_keys = list(LANGUAGE_OPTIONS_SOURCE.keys())
+    target_keys = list(LANGUAGE_OPTIONS_TARGET.keys())
+
+    default_src_idx = source_keys.index(settings.DEFAULT_SOURCE_LANG) if settings.DEFAULT_SOURCE_LANG in source_keys else 0
+    default_tgt_idx = target_keys.index(settings.DEFAULT_TARGET_LANG) if settings.DEFAULT_TARGET_LANG in target_keys else 0
+
     with col_a:
-        source_lang = st.text_input(
+        source_lang = st.selectbox(
             "Idioma origen",
-            value=settings.DEFAULT_SOURCE_LANG,
-            help="Ej: 'en', 'auto' para detección automática",
+            options=source_keys,
+            index=default_src_idx,
+            format_func=lambda k: LANGUAGE_OPTIONS_SOURCE.get(k, k),
+            help="Selecciona el idioma del documento o 'auto' para detección automática.",
         )
     with col_b:
-        target_lang = st.text_input("Idioma destino", value=settings.DEFAULT_TARGET_LANG)
+        target_lang = st.selectbox(
+            "Idioma destino",
+            options=target_keys,
+            index=default_tgt_idx,
+            format_func=lambda k: LANGUAGE_OPTIONS_TARGET.get(k, k),
+            help="Selecciona el idioma al que se traducirá el documento.",
+        )
 
     alignment_mode = st.selectbox(
         "Modo de alineación",
@@ -931,6 +1006,22 @@ if start_clicked:
 if st.session_state.results:
     st.subheader("🔍 Revisión y verificación cruzada")
 
+    # Botón global de descarga de lote en ZIP si hay archivos procesados con éxito
+    valid_results = [
+        c for c in st.session_state.results.values()
+        if c.get("segments") and not c.get("error")
+    ]
+    if valid_results:
+        zip_bytes = create_batch_zip(st.session_state.results, export_format)
+        st.download_button(
+            label=f"📦 Descargar lote completo (.ZIP con archivos .{export_format})",
+            data=zip_bytes,
+            file_name=f"traducciones_lote_{export_format}.zip",
+            mime="application/zip",
+            key="download_all_zip",
+        )
+        st.markdown("")
+
     for fname, context in st.session_state.results.items():
         status = context.get("file_status", "pendiente")
         with st.expander(f"{STATUS_LABELS.get(status, status)} — {fname}", expanded=(status != "error")):
@@ -945,41 +1036,66 @@ if st.session_state.results:
                 continue
 
             error_rate = context.get("error_rate", 0.0)
-            st.caption(
-                f"Tasa de advertencia del validador: {error_rate:.1%} · "
-                f"Segmentos: {len(segments)} · "
-                f"Tiempo: {context.get('duration_seconds', 0):.1f}s"
-            )
+            duration = context.get("duration_seconds", 0.0)
 
-            col_orig, col_trans = st.columns(2)
+            # Métricas visuales del archivo (en lugar de solo un caption plano)
+            m1, m2, m3, m4 = st.columns(4)
+            with m1:
+                st.metric(label="Segmentos", value=len(segments))
+            with m2:
+                st.metric(label="Tasa de advertencia", value=f"{error_rate:.1%}")
+            with m3:
+                st.metric(label="Tiempo", value=f"{duration:.1f}s")
+            with m4:
+                st.metric(label="Estado final", value=STATUS_LABELS.get(status, status))
+
+            st.markdown("---")
+
+            # Vista previa sincronizada de solo lectura con scroll interno
+            st.markdown("##### 📖 Vista previa de solo lectura (resaltado por colores)")
             originals_text = [s.original for s in segments]
+            translated_text_display = [
+                st.session_state.edited_texts.get((fname, s.id), s.translated or s.original)
+                for s in segments
+            ]
             colors = [s.color for s in segments]
 
+            col_orig, col_trans = st.columns(2)
             with col_orig:
                 st.markdown("**Texto original**")
-                st.markdown(render_highlighted_html(originals_text, colors), unsafe_allow_html=True)
+                with st.container(height=380):
+                    st.markdown(render_highlighted_html(originals_text, colors), unsafe_allow_html=True)
 
             with col_trans:
-                st.markdown("**Texto traducido (editable)**")
-                edited_segments_text = []
-                for seg in segments:
-                    key = f"edit_{fname}_{seg.id}"
-                    default_value = st.session_state.edited_texts.get(
-                        (fname, seg.id), seg.translated
-                    )
-                    new_value = st.text_area(
-                        label=f"Segmento {seg.id + 1} "
-                              f"({'⚠️ ' + '; '.join(seg.validation_notes) if seg.validation_notes else 'OK'})",
-                        value=default_value,
-                        key=key,
-                        height=100,
-                    )
-                    st.session_state.edited_texts[(fname, seg.id)] = new_value
-                    seg.translated = new_value
-                    edited_segments_text.append(new_value)
+                st.markdown("**Texto traducido**")
+                with st.container(height=380):
+                    st.markdown(render_highlighted_html(translated_text_display, colors), unsafe_allow_html=True)
 
-            # --- Exportación ---
+            # Edición manual por segmento en contenedor colapsable separado
+            with st.expander("✏️ Edición manual por segmento (opcional)", expanded=False):
+                st.caption("Modifica cualquier segmento antes de exportar. Los cambios se reflejan en la descarga.")
+                with st.container(height=320):
+                    for seg in segments:
+                        key = f"edit_{fname}_{seg.id}"
+                        default_value = st.session_state.edited_texts.get(
+                            (fname, seg.id), seg.translated
+                        )
+                        label_warning = f"({'⚠️ ' + '; '.join(seg.validation_notes) if seg.validation_notes else 'OK'})"
+                        new_value = st.text_area(
+                            label=f"Segmento {seg.id + 1} {label_warning}",
+                            value=default_value,
+                            key=key,
+                            height=90,
+                        )
+                        st.session_state.edited_texts[(fname, seg.id)] = new_value
+                        seg.translated = new_value
+
+            # --- Exportación individual ---
             try:
+                # Sincronizar los segmentos con las ediciones
+                for seg in segments:
+                    if (fname, seg.id) in st.session_state.edited_texts:
+                        seg.translated = st.session_state.edited_texts[(fname, seg.id)]
                 file_bytes_out = export_segments(segments, export_format)
                 mime_map = {
                     "txt": "text/plain",
