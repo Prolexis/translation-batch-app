@@ -1,0 +1,5 @@
+Artificial intelligence is transforming the way people work and communicate.
+
+Companies of all sizes are adopting machine learning models to automate repetitive tasks, gain insights from data, and improve customer experience.
+
+However, these technologies also raise important questions about privacy, fairness, and the future of employment.

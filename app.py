@@ -1,0 +1,944 @@
+"""
+================================================================================
+SISTEMA DE TRADUCCIÓN POR LOTES CON AGENTES LANGCHAIN + GEMINI (TODO EN UNO)
+================================================================================
+Este archivo contiene la aplicación completa:
+  1. Configuración y variables de entorno.
+  2. Manejo de archivos (lectura y exportación en .txt, .docx, .pdf).
+  3. Control de tasa de llamadas y reintentos (RateLimiter + Exponential Backoff).
+  4. Agentes de procesamiento:
+     - Agente Extractor (parseo de texto por párrafos/segmentos).
+     - Agente Traductor (LCEL + ChatGoogleGenerativeAI).
+     - Agente Validador (heurísticas de calidad + reintentos automáticos).
+     - Agente Alineador (alineación por posición o semántica con Embeddings).
+  5. Orquestador del Pipeline con memoria de conversación (ConversationBufferMemory).
+  6. Interfaz Web interactiva en Streamlit con verificación cruzada por colores.
+================================================================================
+"""
+
+import os
+import io
+import re
+import html
+import time
+import random
+import logging
+import threading
+import functools
+import traceback
+from dataclasses import dataclass, field
+from typing import List, Optional, Callable
+
+import numpy as np
+import docx
+from docx import Document as DocxDocument
+from pypdf import PdfReader
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.units import cm
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import simpleSplit
+
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_google_genai import ChatGoogleGenerativeAI
+import streamlit as st
+
+# Carga opcional de .env
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
+# Logging básico
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("translation_app")
+
+
+# ==============================================================================
+# 1. CONFIGURACIÓN CENTRALIZADA
+# ==============================================================================
+@dataclass(frozen=True)
+class Settings:
+    # Credenciales y modelos de Gemini
+    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+    GEMINI_EMBEDDING_MODEL: str = os.getenv("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
+
+    # Idiomas por defecto
+    DEFAULT_SOURCE_LANG: str = os.getenv("DEFAULT_SOURCE_LANG", "auto")
+    DEFAULT_TARGET_LANG: str = os.getenv("DEFAULT_TARGET_LANG", "es")
+
+    # Parámetros del Agente Validador
+    LENGTH_DIFF_THRESHOLD: float = float(os.getenv("LENGTH_DIFF_THRESHOLD", "0.40"))  # ±40%
+    MAX_RETRIES: int = int(os.getenv("MAX_RETRIES", "2"))
+    MIN_UNTRANSLATED_WORD_LEN: int = int(os.getenv("MIN_UNTRANSLATED_WORD_LEN", "4"))
+
+    # Parámetros de Alineación
+    ALIGNMENT_MODE: str = os.getenv("ALIGNMENT_MODE", "position")  # "position" | "semantic"
+    SEMANTIC_SIMILARITY_THRESHOLD: float = float(os.getenv("SEMANTIC_SIMILARITY_THRESHOLD", "0.55"))
+
+    # Rate Limiting & Backoff ante 429
+    MAX_CALLS_PER_MINUTE: int = int(os.getenv("MAX_CALLS_PER_MINUTE", "30"))
+    BACKOFF_BASE_SECONDS: float = float(os.getenv("BACKOFF_BASE_SECONDS", "2.0"))
+    BACKOFF_MAX_RETRIES: int = int(os.getenv("BACKOFF_MAX_RETRIES", "5"))
+    BACKOFF_MAX_SECONDS: float = float(os.getenv("BACKOFF_MAX_SECONDS", "60.0"))
+
+    # Paleta de colores cíclica para verificación cruzada
+    HIGHLIGHT_COLORS: tuple = field(default_factory=lambda: (
+        "#FFD54F",  # amarillo
+        "#81C784",  # verde
+        "#64B5F6",  # azul
+        "#F06292",  # rosa
+        "#BA68C8",  # violeta
+        "#FF8A65",  # naranja
+        "#4DB6AC",  # turquesa
+        "#A1887F",  # marrón
+    ))
+
+    # Extensiones de archivo soportadas
+    SUPPORTED_EXTENSIONS: tuple = (".txt", ".docx", ".pdf")
+
+
+settings = Settings()
+
+
+# ==============================================================================
+# 2. ESTRUCTURA DE DATOS Y EXCEPCIONES
+# ==============================================================================
+class UnsupportedFormatError(Exception):
+    """Lanzada cuando la extensión del archivo no es soportada."""
+    pass
+
+
+class CorruptFileError(Exception):
+    """Lanzada cuando el archivo no se puede parsear o está vacío/dañado."""
+    pass
+
+
+@dataclass
+class Segment:
+    """Unidad mínima de texto (párrafo) que fluye por el pipeline de agentes."""
+    id: int
+    original: str
+    translated: str = ""
+    status: str = "pendiente"          # pendiente | ok | sospechoso | error
+    validation_notes: List[str] = field(default_factory=list)
+    retries: int = 0
+    color: str = "#FFD54F"
+
+
+# ==============================================================================
+# 3. RATE LIMITER & BACKOFF EXPONENCIAL
+# ==============================================================================
+class RateLimiter:
+    """Control de llamadas salientes por minuto (thread-safe)."""
+    def __init__(self, max_calls_per_minute: int = None):
+        self.max_calls = max_calls_per_minute or settings.MAX_CALLS_PER_MINUTE
+        self._lock = threading.Lock()
+        self._timestamps: list[float] = []
+
+    def acquire(self):
+        with self._lock:
+            now = time.time()
+            self._timestamps = [t for t in self._timestamps if now - t < 60]
+            if len(self._timestamps) >= self.max_calls:
+                sleep_for = 60 - (now - self._timestamps[0]) + 0.05
+                logger.info("Rate limit alcanzado, pausando %.2fs", sleep_for)
+                time.sleep(max(sleep_for, 0))
+                now = time.time()
+                self._timestamps = [t for t in self._timestamps if now - t < 60]
+            self._timestamps.append(now)
+
+
+global_rate_limiter = RateLimiter()
+
+
+def _is_retryable_error(exc: Exception) -> bool:
+    """Determina si un error devuelto por la API o red amerita reintento."""
+    msg = str(exc).lower()
+    keywords = [
+        "429", "resource_exhausted", "rate limit", "quota",
+        "deadline exceeded", "timeout", "unavailable", "503",
+    ]
+    return any(k in msg for k in keywords)
+
+
+def with_backoff(max_retries: int = None, base_seconds: float = None, max_seconds: float = None):
+    """Decorador con backoff exponencial y jitter para llamadas a la API."""
+    max_retries = max_retries if max_retries is not None else settings.BACKOFF_MAX_RETRIES
+    base_seconds = base_seconds if base_seconds is not None else settings.BACKOFF_BASE_SECONDS
+    max_seconds = max_seconds if max_seconds is not None else settings.BACKOFF_MAX_SECONDS
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            attempt = 0
+            while True:
+                try:
+                    global_rate_limiter.acquire()
+                    return func(*args, **kwargs)
+                except Exception as exc:  # noqa: BLE001
+                    attempt += 1
+                    if attempt > max_retries or not _is_retryable_error(exc):
+                        logger.error("Fallo definitivo tras %d intentos: %s", attempt, exc)
+                        raise
+                    delay = min(base_seconds * (2 ** (attempt - 1)), max_seconds)
+                    delay += random.uniform(0, delay * 0.25)
+                    logger.warning(
+                        "Error transitorio (%s). Reintento %d/%d en %.1fs",
+                        exc, attempt, max_retries, delay,
+                    )
+                    time.sleep(delay)
+        return wrapper
+    return decorator
+
+
+# ==============================================================================
+# 4. EXTRACCIÓN Y EXPORTACIÓN DE ARCHIVOS (.TXT, .DOCX, .PDF)
+# ==============================================================================
+def _clean_text(text: str) -> str:
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
+
+
+def extract_txt(file_bytes: bytes) -> List[str]:
+    try:
+        text = file_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        text = file_bytes.decode("latin-1", errors="ignore")
+    text = _clean_text(text)
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    if not paragraphs and text:
+        paragraphs = [text]
+    return paragraphs
+
+
+def extract_docx(file_bytes: bytes) -> List[str]:
+    try:
+        doc = docx.Document(io.BytesIO(file_bytes))
+    except Exception as exc:
+        raise CorruptFileError(f"No se pudo leer el archivo .docx: {exc}") from exc
+    paragraphs = []
+    for p in doc.paragraphs:
+        cleaned = _clean_text(p.text)
+        if cleaned:
+            paragraphs.append(cleaned)
+    if not paragraphs:
+        raise CorruptFileError("El documento .docx no contiene texto extraíble.")
+    return paragraphs
+
+
+def extract_pdf(file_bytes: bytes) -> List[str]:
+    try:
+        reader = PdfReader(io.BytesIO(file_bytes))
+    except Exception as exc:
+        raise CorruptFileError(f"No se pudo leer el archivo .pdf: {exc}") from exc
+    if reader.is_encrypted:
+        try:
+            reader.decrypt("")
+        except Exception as exc:
+            raise CorruptFileError("El PDF está protegido/cifrado con contraseña.") from exc
+
+    paragraphs = []
+    for page in reader.pages:
+        try:
+            page_text = page.extract_text() or ""
+        except Exception:
+            page_text = ""
+        page_text = _clean_text(page_text)
+        for block in page_text.split("\n\n"):
+            block = block.strip()
+            if block:
+                paragraphs.append(block)
+    if not paragraphs:
+        raise CorruptFileError("No se pudo extraer texto del PDF (posible PDF escaneado sin OCR).")
+    return paragraphs
+
+
+def extract_text_segments(filename: str, file_bytes: bytes) -> List[str]:
+    ext = "." + filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
+    if ext == ".txt":
+        return extract_txt(file_bytes)
+    if ext == ".docx":
+        return extract_docx(file_bytes)
+    if ext == ".pdf":
+        return extract_pdf(file_bytes)
+    raise UnsupportedFormatError(f"Formato no soportado: {ext or 'desconocido'}")
+
+
+def export_txt(segments: List[Segment]) -> bytes:
+    text = "\n\n".join(s.translated or s.original for s in segments)
+    return text.encode("utf-8")
+
+
+def export_docx(segments: List[Segment]) -> bytes:
+    doc = DocxDocument()
+    for s in segments:
+        doc.add_paragraph(s.translated or s.original)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+def export_pdf(segments: List[Segment]) -> bytes:
+    buf = io.BytesIO()
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+    margin = 2 * cm
+    max_width = width - 2 * margin
+    y = height - margin
+    font_name, font_size, leading = "Helvetica", 11, 14
+
+    c.setFont(font_name, font_size)
+    for s in segments:
+        paragraph = s.translated or s.original
+        lines = simpleSplit(paragraph, font_name, font_size, max_width)
+        for line in lines:
+            if y < margin:
+                c.showPage()
+                c.setFont(font_name, font_size)
+                y = height - margin
+            c.drawString(margin, y, line)
+            y -= leading
+        y -= leading
+    c.save()
+    return buf.getvalue()
+
+
+def export_segments(segments: List[Segment], target_format: str) -> bytes:
+    target_format = target_format.lower().lstrip(".")
+    if target_format == "txt":
+        return export_txt(segments)
+    if target_format == "docx":
+        return export_docx(segments)
+    if target_format == "pdf":
+        return export_pdf(segments)
+    raise UnsupportedFormatError(f"Formato de exportación no soportado: {target_format}")
+
+
+# ==============================================================================
+# 5. UTILIDADES DE COLOR Y VERIFICACIÓN CRUZADA
+# ==============================================================================
+def color_for_index(index: int) -> str:
+    palette = settings.HIGHLIGHT_COLORS
+    return palette[index % len(palette)]
+
+
+def _contrast_text_color(hex_color: str) -> str:
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return "#000000" if luminance > 0.6 else "#FFFFFF"
+
+
+def render_highlighted_html(segments_text: List[str], colors: List[str]) -> str:
+    blocks = []
+    for text, color in zip(segments_text, colors):
+        safe_text = html.escape(text).replace("\n", "<br>")
+        fg = _contrast_text_color(color)
+        blocks.append(
+            f'<div style="background-color:{color}; color:{fg}; '
+            f'padding:8px 10px; border-radius:6px; margin-bottom:8px; '
+            f'font-size:0.92rem; line-height:1.4;">{safe_text}</div>'
+        )
+    return "\n".join(blocks)
+
+
+# ==============================================================================
+# 6. PIPELINE DE AGENTES
+# ==============================================================================
+
+# --- AGENTE 1: EXTRACTOR ---
+class ExtractorAgent:
+    name = "extractor"
+
+    def run(self, context: dict) -> dict:
+        filename = context["filename"]
+        file_bytes = context["file_bytes"]
+
+        logger.info("[Extractor] Procesando %s", filename)
+        try:
+            raw_paragraphs = extract_text_segments(filename, file_bytes)
+        except (UnsupportedFormatError, CorruptFileError) as exc:
+            logger.error("[Extractor] Error en %s: %s", filename, exc)
+            context["error"] = str(exc)
+            context["segments"] = []
+            return context
+
+        segments: List[Segment] = [
+            Segment(id=i, original=paragraph)
+            for i, paragraph in enumerate(raw_paragraphs)
+        ]
+
+        context["segments"] = segments
+        context.setdefault("memory_log", []).append(
+            f"[extractor] {len(segments)} segmentos extraídos de '{filename}'."
+        )
+        logger.info("[Extractor] %d segmentos extraídos de %s", len(segments), filename)
+        return context
+
+
+# --- AGENTE 2: TRADUCTOR ---
+_SYSTEM_PROMPT = (
+    "Eres un traductor profesional. Traduce el texto del usuario del idioma "
+    "'{source_lang}' al idioma '{target_lang}'. Devuelve ÚNICAMENTE la "
+    "traducción, sin explicaciones, sin comillas adicionales, preservando "
+    "saltos de línea y el tono del original. Si el texto ya está en el "
+    "idioma destino, devuélvelo sin cambios."
+)
+
+_RETRY_SUFFIX = (
+    "\n\nIMPORTANTE: un intento previo de traducción fue rechazado por un "
+    "verificador automático por el siguiente motivo: {retry_reason}. "
+    "Corrige ese problema específico en esta nueva traducción."
+)
+
+
+class TranslatorAgent:
+    name = "translator"
+
+    def __init__(self, model_name: str = None, api_key: str = None, temperature: float = 0.2):
+        self.model_name = model_name or settings.GEMINI_MODEL
+        self.api_key = api_key or settings.GEMINI_API_KEY
+        self._llm = ChatGoogleGenerativeAI(
+            model=self.model_name,
+            google_api_key=self.api_key,
+            temperature=temperature,
+        )
+        self._parser = StrOutputParser()
+
+    def _build_chain(self, retry_reason: str = None):
+        system = _SYSTEM_PROMPT
+        if retry_reason:
+            system = system + _RETRY_SUFFIX.format(retry_reason=retry_reason)
+        prompt = ChatPromptTemplate.from_messages([
+            ("system", system),
+            ("human", "{text}"),
+        ])
+        return prompt | self._llm | self._parser
+
+    @with_backoff()
+    def _translate_one(self, text: str, source_lang: str, target_lang: str, retry_reason: str = None) -> str:
+        chain = self._build_chain(retry_reason=retry_reason)
+        result = chain.invoke({
+            "text": text,
+            "source_lang": source_lang,
+            "target_lang": target_lang,
+        })
+        return str(result).strip()
+
+    def run(self, context: dict) -> dict:
+        segments: List[Segment] = context.get("segments", [])
+        source_lang = context.get("source_lang", settings.DEFAULT_SOURCE_LANG)
+        target_lang = context.get("target_lang", settings.DEFAULT_TARGET_LANG)
+
+        for seg in segments:
+            if seg.status == "ok":
+                continue
+            try:
+                seg.translated = self._translate_one(seg.original, source_lang, target_lang)
+                seg.status = "traducido"
+            except Exception as exc:  # noqa: BLE001
+                logger.error("[Translator] Fallo traduciendo segmento %d: %s", seg.id, exc)
+                seg.status = "error"
+                seg.validation_notes.append(f"Error de traducción: {exc}")
+
+        context.setdefault("memory_log", []).append(
+            f"[translator] {len(segments)} segmentos procesados ({source_lang} -> {target_lang})."
+        )
+        return context
+
+    def retranslate_segment(self, seg: Segment, source_lang: str, target_lang: str, reason: str) -> None:
+        """Reintenta un único segmento marcado como sospechoso por el validador."""
+        try:
+            seg.translated = self._translate_one(
+                seg.original, source_lang, target_lang, retry_reason=reason
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.error("[Translator] Fallo en reintento del segmento %d: %s", seg.id, exc)
+            seg.status = "error"
+            seg.validation_notes.append(f"Error en reintento: {exc}")
+
+
+# --- AGENTE 3: VALIDADOR ---
+_STOPWORD_WHITELIST = {
+    "ok", "internet", "email", "online", "web", "app", "gps", "usb", "pdf",
+}
+_WORD_RE = re.compile(r"[A-Za-zÀ-ÿ]{%d,}" % settings.MIN_UNTRANSLATED_WORD_LEN)
+
+
+class ValidatorAgent:
+    name = "validator"
+
+    def _length_ratio_suspicious(self, original: str, translated: str) -> bool:
+        len_o, len_t = len(original.strip()), len(translated.strip())
+        if len_o == 0:
+            return False
+        diff_ratio = abs(len_t - len_o) / len_o
+        return diff_ratio > settings.LENGTH_DIFF_THRESHOLD
+
+    def _find_untranslated_words(self, original: str, translated: str) -> List[str]:
+        orig_words = {w.lower() for w in _WORD_RE.findall(original)}
+        trans_words = {w.lower() for w in _WORD_RE.findall(translated)}
+        overlap = orig_words & trans_words
+        return sorted(w for w in overlap if w not in _STOPWORD_WHITELIST)
+
+    def validate_segment(self, seg: Segment) -> bool:
+        seg.validation_notes = []
+        problems = []
+
+        if self._length_ratio_suspicious(seg.original, seg.translated):
+            len_o, len_t = len(seg.original.strip()), len(seg.translated.strip())
+            ratio = abs(len_t - len_o) / max(len_o, 1)
+            problems.append(
+                f"Diferencia de longitud del {ratio:.0%} supera el umbral ({settings.LENGTH_DIFF_THRESHOLD:.0%})."
+            )
+
+        untranslated = self._find_untranslated_words(seg.original, seg.translated)
+        if untranslated:
+            problems.append(
+                "Posibles palabras sin traducir: " + ", ".join(untranslated[:8])
+            )
+
+        if problems:
+            seg.status = "sospechoso"
+            seg.validation_notes = problems
+            return False
+
+        seg.status = "ok"
+        return True
+
+    def run(self, context: dict, translator: Optional[TranslatorAgent] = None) -> dict:
+        segments: List[Segment] = context.get("segments", [])
+        source_lang = context.get("source_lang", settings.DEFAULT_SOURCE_LANG)
+        target_lang = context.get("target_lang", settings.DEFAULT_TARGET_LANG)
+        translator = translator or context.get("translator_agent")
+
+        error_count = 0
+        for seg in segments:
+            if seg.status == "error":
+                error_count += 1
+                continue
+
+            passed = self.validate_segment(seg)
+            while not passed and seg.retries < settings.MAX_RETRIES and translator is not None:
+                seg.retries += 1
+                reason = "; ".join(seg.validation_notes)
+                logger.info(
+                    "[Validator] Segmento %d sospechoso (intento %d/%d): %s",
+                    seg.id, seg.retries, settings.MAX_RETRIES, reason,
+                )
+                translator.retranslate_segment(seg, source_lang, target_lang, reason)
+                if seg.status == "error":
+                    break
+                passed = self.validate_segment(seg)
+
+            if seg.status != "ok":
+                error_count += 1
+
+        total = len(segments) or 1
+        error_rate = error_count / total
+        context["error_rate"] = error_rate
+        context.setdefault("memory_log", []).append(
+            f"[validator] {total - error_count}/{total} segmentos OK (tasa de error {error_rate:.1%})."
+        )
+        logger.info("[Validator] Tasa de error del archivo: %.1f%%", error_rate * 100)
+        return context
+
+
+# --- AGENTE 4: ALINEADOR ---
+class AlignerAgent:
+    name = "aligner"
+
+    def __init__(self, api_key: str = None):
+        self._embeddings = None
+        self.api_key = api_key or settings.GEMINI_API_KEY
+
+    def _get_embeddings_client(self):
+        if self._embeddings is None:
+            from langchain_google_genai import GoogleGenerativeAIEmbeddings
+            self._embeddings = GoogleGenerativeAIEmbeddings(
+                model=settings.GEMINI_EMBEDDING_MODEL,
+                google_api_key=self.api_key,
+            )
+        return self._embeddings
+
+    def _align_by_position(self, segments: List[Segment]) -> None:
+        for seg in segments:
+            seg.color = color_for_index(seg.id)
+
+    def _align_by_semantics(self, segments: List[Segment]) -> None:
+        client = self._get_embeddings_client()
+        originals = [s.original for s in segments]
+        translations = [s.translated or s.original for s in segments]
+
+        try:
+            emb_orig = np.array(client.embed_documents(originals))
+            emb_trans = np.array(client.embed_documents(translations))
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[Aligner] Falló cálculo de embeddings (%s); usando alineación por posición.", exc
+            )
+            self._align_by_position(segments)
+            return
+
+        def cosine(a, b):
+            na, nb = np.linalg.norm(a), np.linalg.norm(b)
+            if na == 0 or nb == 0:
+                return 0.0
+            return float(np.dot(a, b) / (na * nb))
+
+        for i, seg in enumerate(segments):
+            sim = cosine(emb_orig[i], emb_trans[i])
+            seg.color = color_for_index(i)
+            if sim < settings.SEMANTIC_SIMILARITY_THRESHOLD:
+                seg.validation_notes.append(
+                    f"Similitud semántica baja ({sim:.2f}); revisar correspondencia."
+                )
+                if seg.status == "ok":
+                    seg.status = "sospechoso"
+
+    def run(self, context: dict) -> dict:
+        segments: List[Segment] = context.get("segments", [])
+        mode = context.get("alignment_mode", settings.ALIGNMENT_MODE)
+
+        if mode == "semantic":
+            self._align_by_semantics(segments)
+        else:
+            self._align_by_position(segments)
+
+        context.setdefault("memory_log", []).append(
+            f"[aligner] {len(segments)} segmentos alineados (modo='{mode}')."
+        )
+        return context
+
+
+# ==============================================================================
+# 7. ORQUESTADOR PRINCIPAL DEL PIPELINE
+# ==============================================================================
+class ConversationBufferMemory:
+    """Buffer de memoria para registrar la trazabilidad y eventos del pipeline."""
+    def __init__(self, return_messages: bool = True):
+        self.return_messages = return_messages
+        self.messages: list[str] = []
+
+    def save_context(self, inputs: dict, outputs: dict):
+        inp = inputs.get("input", "")
+        out = outputs.get("output", "")
+        self.messages.append(f"{inp}: {out}")
+
+    def get_transcript(self) -> str:
+        return "\n".join(self.messages)
+
+
+ProgressCallback = Optional[Callable[[str, float], None]]
+
+
+class TranslationOrchestrator:
+    def __init__(self, source_lang: str = None, target_lang: str = None,
+                 alignment_mode: str = None, api_key: str = None):
+        self.source_lang = source_lang or settings.DEFAULT_SOURCE_LANG
+        self.target_lang = target_lang or settings.DEFAULT_TARGET_LANG
+        self.alignment_mode = alignment_mode or settings.ALIGNMENT_MODE
+        self.api_key = api_key or settings.GEMINI_API_KEY
+
+        # Memoria compartida del pipeline
+        self.memory = ConversationBufferMemory(return_messages=True)
+
+        self.extractor = ExtractorAgent()
+        self.translator = TranslatorAgent(api_key=self.api_key)
+        self.validator = ValidatorAgent()
+        self.aligner = AlignerAgent(api_key=self.api_key)
+
+    def _log_to_memory(self, context: dict, filename: str):
+        for line in context.get("memory_log", []):
+            self.memory.save_context(
+                {"input": f"[{filename}] evento"},
+                {"output": line},
+            )
+
+    def process_file(self, filename: str, file_bytes: bytes,
+                     on_progress: ProgressCallback = None) -> dict:
+        context = {
+            "filename": filename,
+            "file_bytes": file_bytes,
+            "source_lang": self.source_lang,
+            "target_lang": self.target_lang,
+            "alignment_mode": self.alignment_mode,
+            "translator_agent": self.translator,
+            "memory_log": [],
+            "started_at": time.time(),
+        }
+
+        stages = [
+            ("Extrayendo texto", self.extractor.run, 0.25),
+            ("Traduciendo con Gemini", self.translator.run, 0.60),
+            ("Validando traducción", lambda ctx: self.validator.run(ctx, self.translator), 0.85),
+            ("Alineando segmentos", self.aligner.run, 1.0),
+        ]
+
+        for stage_name, fn, progress_fraction in stages:
+            if context.get("error") and stage_name != "Extrayendo texto":
+                break
+            try:
+                context = fn(context)
+            except Exception as exc:  # noqa: BLE001
+                logger.exception("Fallo inesperado en etapa '%s' para %s", stage_name, filename)
+                context["error"] = f"Error en etapa '{stage_name}': {exc}"
+                break
+            if on_progress:
+                on_progress(stage_name, progress_fraction)
+
+        context["finished_at"] = time.time()
+        context["duration_seconds"] = context["finished_at"] - context["started_at"]
+        self._log_to_memory(context, filename)
+
+        if context.get("error"):
+            context["file_status"] = "error"
+        elif context.get("error_rate", 0) > 0.10:
+            context["file_status"] = "traducido_con_advertencias"
+        else:
+            context["file_status"] = "traducido"
+
+        return context
+
+    def get_memory_transcript(self) -> str:
+        """Devuelve el historial acumulado de todos los agentes (para auditoría)."""
+        return self.memory.get_transcript()
+
+
+# ==============================================================================
+# 8. INTERFAZ STREAMLIT (UI)
+# ==============================================================================
+st.set_page_config(
+    page_title="Traducción por Lotes con Agentes (Gemini)",
+    page_icon="🌐",
+    layout="wide",
+)
+
+STATUS_LABELS = {
+    "pendiente": "⏳ Pendiente",
+    "procesando": "🔄 Procesando",
+    "traducido": "✅ Traducido",
+    "traducido_con_advertencias": "⚠️ Traducido (con advertencias)",
+    "error": "❌ Error",
+}
+
+
+def init_session_state():
+    st.session_state.setdefault("files_status", {})   # filename -> status str
+    st.session_state.setdefault("results", {})        # filename -> context dict
+    st.session_state.setdefault("uploaded_map", {})   # filename -> bytes
+    st.session_state.setdefault("processing", False)
+    st.session_state.setdefault("edited_texts", {})   # (filename, seg_id) -> str
+
+
+init_session_state()
+
+# --- Barra lateral (Configuración) ---
+with st.sidebar:
+    st.header("⚙️ Configuración")
+
+    api_key_input = st.text_input(
+        "GEMINI_API_KEY",
+        value=settings.GEMINI_API_KEY,
+        type="password",
+        help="Introduce tu API Key de Google Gemini.",
+    )
+    col_a, col_b = st.columns(2)
+    with col_a:
+        source_lang = st.text_input(
+            "Idioma origen",
+            value=settings.DEFAULT_SOURCE_LANG,
+            help="Ej: 'en', 'auto' para detección automática",
+        )
+    with col_b:
+        target_lang = st.text_input("Idioma destino", value=settings.DEFAULT_TARGET_LANG)
+
+    alignment_mode = st.selectbox(
+        "Modo de alineación",
+        options=["position", "semantic"],
+        index=0 if settings.ALIGNMENT_MODE == "position" else 1,
+        help="'position': por orden de párrafo (rápido). "
+             "'semantic': valida además con embeddings de Gemini.",
+    )
+
+    export_format = st.selectbox("Formato de exportación", options=["txt", "docx", "pdf"], index=1)
+
+    st.markdown("---")
+    st.caption(
+        f"Umbral de longitud: ±{settings.LENGTH_DIFF_THRESHOLD:.0%} · "
+        f"Reintentos máx./segmento: {settings.MAX_RETRIES} · "
+        f"Llamadas máx./min: {settings.MAX_CALLS_PER_MINUTE}"
+    )
+
+# --- Cabecera Principal ---
+st.title("🌐 Sistema de Traducción por Lotes con Agentes LangChain + Gemini")
+st.write(
+    "Sube varios documentos (`.txt`, `.docx`, `.pdf`), y un pipeline de "
+    "**4 agentes autónomos** (extractor → traductor → validador → alineador) los procesará "
+    "en lote, mostrando resultados en vivo con verificación cruzada por colores."
+)
+
+# --- 1. Carga de Archivos ---
+uploaded_files = st.file_uploader(
+    "Sube uno o más archivos",
+    type=["txt", "docx", "pdf"],
+    accept_multiple_files=True,
+)
+
+if uploaded_files:
+    for f in uploaded_files:
+        if f.name not in st.session_state.uploaded_map:
+            st.session_state.uploaded_map[f.name] = f.getvalue()
+            st.session_state.files_status.setdefault(f.name, "pendiente")
+
+# Tabla de estado de archivos
+if st.session_state.uploaded_map:
+    st.subheader("📋 Estado de archivos")
+    status_rows = [
+        {"Archivo": fname, "Estado": STATUS_LABELS.get(status, status)}
+        for fname, status in st.session_state.files_status.items()
+    ]
+    st.table(status_rows)
+
+# --- 2. Procesamiento del Lote ---
+run_col1, run_col2 = st.columns([1, 3])
+with run_col1:
+    start_clicked = st.button(
+        "🚀 Procesar lote",
+        disabled=st.session_state.processing or not st.session_state.uploaded_map,
+        use_container_width=True,
+    )
+
+if start_clicked:
+    if not api_key_input:
+        st.error("⚠️ Debes configurar tu GEMINI_API_KEY en la barra lateral antes de procesar.")
+    else:
+        st.session_state.processing = True
+
+        orchestrator = TranslationOrchestrator(
+            source_lang=source_lang,
+            target_lang=target_lang,
+            alignment_mode=alignment_mode,
+            api_key=api_key_input,
+        )
+
+        pending_files = [
+            fname for fname, status in st.session_state.files_status.items()
+            if status == "pendiente"
+        ]
+
+        overall_progress = st.progress(0.0, text="Iniciando procesamiento del lote...")
+        live_area = st.container()
+
+        total = len(pending_files) or 1
+        for idx, fname in enumerate(pending_files):
+            st.session_state.files_status[fname] = "procesando"
+
+            def _on_progress(stage_name: str, frac: float, _fname=fname, _idx=idx):
+                overall_progress.progress(
+                    min((_idx + frac) / total, 1.0),
+                    text=f"[{_fname}] {stage_name}...",
+                )
+
+            try:
+                file_bytes = st.session_state.uploaded_map[fname]
+                context = orchestrator.process_file(fname, file_bytes, on_progress=_on_progress)
+            except Exception as exc:  # noqa: BLE001
+                logger.error("Fallo procesando %s: %s\n%s", fname, exc, traceback.format_exc())
+                context = {"error": str(exc), "file_status": "error", "segments": []}
+
+            st.session_state.results[fname] = context
+            st.session_state.files_status[fname] = context.get("file_status", "error")
+
+            with live_area:
+                if context.get("file_status") != "error":
+                    st.success(f"✅ Completado: {fname}")
+                else:
+                    st.error(f"❌ Error en {fname}: {context.get('error')}")
+
+        overall_progress.progress(1.0, text="Lote completado.")
+        st.session_state.processing = False
+        st.rerun()
+
+# --- 3. Revisión, Verificación Cruzada y Edición ---
+if st.session_state.results:
+    st.subheader("🔍 Revisión y verificación cruzada")
+
+    for fname, context in st.session_state.results.items():
+        status = context.get("file_status", "pendiente")
+        with st.expander(f"{STATUS_LABELS.get(status, status)} — {fname}", expanded=(status != "error")):
+
+            if context.get("error"):
+                st.error(context["error"])
+                continue
+
+            segments = context.get("segments", [])
+            if not segments:
+                st.warning("No se extrajeron segmentos de este archivo.")
+                continue
+
+            error_rate = context.get("error_rate", 0.0)
+            st.caption(
+                f"Tasa de advertencia del validador: {error_rate:.1%} · "
+                f"Segmentos: {len(segments)} · "
+                f"Tiempo: {context.get('duration_seconds', 0):.1f}s"
+            )
+
+            col_orig, col_trans = st.columns(2)
+            originals_text = [s.original for s in segments]
+            colors = [s.color for s in segments]
+
+            with col_orig:
+                st.markdown("**Texto original**")
+                st.markdown(render_highlighted_html(originals_text, colors), unsafe_allow_html=True)
+
+            with col_trans:
+                st.markdown("**Texto traducido (editable)**")
+                edited_segments_text = []
+                for seg in segments:
+                    key = f"edit_{fname}_{seg.id}"
+                    default_value = st.session_state.edited_texts.get(
+                        (fname, seg.id), seg.translated
+                    )
+                    new_value = st.text_area(
+                        label=f"Segmento {seg.id + 1} "
+                              f"({'⚠️ ' + '; '.join(seg.validation_notes) if seg.validation_notes else 'OK'})",
+                        value=default_value,
+                        key=key,
+                        height=100,
+                    )
+                    st.session_state.edited_texts[(fname, seg.id)] = new_value
+                    seg.translated = new_value
+                    edited_segments_text.append(new_value)
+
+            # --- Exportación ---
+            try:
+                file_bytes_out = export_segments(segments, export_format)
+                mime_map = {
+                    "txt": "text/plain",
+                    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                    "pdf": "application/pdf",
+                }
+                out_name = fname.rsplit(".", 1)[0] + f".{export_format}"
+                st.download_button(
+                    label=f"⬇️ Descargar traducción ({export_format.upper()})",
+                    data=file_bytes_out,
+                    file_name=out_name,
+                    mime=mime_map[export_format],
+                    key=f"download_{fname}",
+                )
+            except UnsupportedFormatError as exc:
+                st.error(str(exc))
+
+    with st.expander("🧠 Historial de agentes (memoria compartida)"):
+        st.caption(
+            "Registro de eventos y decisiones generadas por cada agente en la memoria del pipeline."
+        )
+        for fname, context in st.session_state.results.items():
+            for line in context.get("memory_log", []):
+                st.text(f"[{fname}] {line}")
