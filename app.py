@@ -68,7 +68,7 @@ class Settings:
 
     # Idiomas por defecto
     DEFAULT_SOURCE_LANG: str = os.getenv("DEFAULT_SOURCE_LANG", "auto")
-    DEFAULT_TARGET_LANG: str = os.getenv("DEFAULT_TARGET_LANG", "es")
+    DEFAULT_TARGET_LANG: str = os.getenv("DEFAULT_TARGET_LANG", "en")
 
     # Parámetros del Agente Validador
     LENGTH_DIFF_THRESHOLD: float = float(os.getenv("LENGTH_DIFF_THRESHOLD", "0.40"))  # ±40%
@@ -410,11 +410,10 @@ class ExtractorAgent:
 
 # --- AGENTE 2: TRADUCTOR ---
 _SYSTEM_PROMPT = (
-    "Eres un traductor profesional. Traduce el texto del usuario del idioma "
-    "'{source_lang}' al idioma '{target_lang}'. Devuelve ÚNICAMENTE la "
-    "traducción, sin explicaciones, sin comillas adicionales, preservando "
-    "saltos de línea y el tono del original. Si el texto ya está en el "
-    "idioma destino, devuélvelo sin cambios."
+    "Eres un traductor profesional. Traduce el texto del usuario al idioma '{target_lang}'. "
+    "Si el idioma origen es '{source_lang}' o 'auto', detecta e interpreta el contenido del original. "
+    "Devuelve ÚNICAMENTE la traducción al idioma '{target_lang}', sin notas explicativas, "
+    "sin comillas adicionales, preservando la estructura, saltos de línea y el formato original."
 )
 
 _RETRY_SUFFIX = (
@@ -827,8 +826,8 @@ def create_batch_zip(results: dict, export_format: str) -> bytes:
             if segments and not context.get("error"):
                 # Sincronizar con posibles ediciones manuales en session_state
                 for seg in segments:
-                    if (fname, seg.id) in st.session_state.edited_texts:
-                        seg.translated = st.session_state.edited_texts[(fname, seg.id)]
+                    val = st.session_state.get(f"edit_{fname}_{seg.id}", st.session_state.edited_texts.get((fname, seg.id), seg.translated))
+                    seg.translated = val
                 file_bytes_out = export_segments(segments, export_format)
                 out_name = fname.rsplit(".", 1)[0] + f".{export_format}"
                 zip_file.writestr(out_name, file_bytes_out)
@@ -964,17 +963,22 @@ if start_clicked:
             api_key=api_key_input,
         )
 
-        pending_files = [
-            fname for fname, status in st.session_state.files_status.items()
-            if status == "pendiente"
-        ]
+        files_to_process = list(st.session_state.uploaded_map.keys())
 
         overall_progress = st.progress(0.0, text="Iniciando procesamiento del lote...")
         live_area = st.container()
 
-        total = len(pending_files) or 1
-        for idx, fname in enumerate(pending_files):
+        total = len(files_to_process) or 1
+        for idx, fname in enumerate(files_to_process):
             st.session_state.files_status[fname] = "procesando"
+
+            # Limpiar cualquier edición previa o llaves cacheadas de este archivo al reprocesar
+            for key in list(st.session_state.edited_texts.keys()):
+                if key[0] == fname:
+                    del st.session_state.edited_texts[key]
+            for s_key in list(st.session_state.keys()):
+                if str(s_key).startswith(f"edit_{fname}_"):
+                    del st.session_state[s_key]
 
             def _on_progress(stage_name: str, frac: float, _fname=fname, _idx=idx):
                 overall_progress.progress(
@@ -1055,7 +1059,7 @@ if st.session_state.results:
             st.markdown("##### 📖 Vista previa de solo lectura (resaltado por colores)")
             originals_text = [s.original for s in segments]
             translated_text_display = [
-                st.session_state.edited_texts.get((fname, s.id), s.translated or s.original)
+                st.session_state.get(f"edit_{fname}_{s.id}", st.session_state.edited_texts.get((fname, s.id), s.translated or s.original))
                 for s in segments
             ]
             colors = [s.color for s in segments]
@@ -1073,12 +1077,12 @@ if st.session_state.results:
 
             # Edición manual por segmento en contenedor colapsable separado
             with st.expander("✏️ Edición manual por segmento (opcional)", expanded=False):
-                st.caption("Modifica cualquier segmento antes de exportar. Los cambios se reflejan en la descarga.")
+                st.caption("Modifica cualquier segmento antes de exportar. Los cambios se reflejan en la vista previa y en la descarga.")
                 with st.container(height=320):
                     for seg in segments:
                         key = f"edit_{fname}_{seg.id}"
-                        default_value = st.session_state.edited_texts.get(
-                            (fname, seg.id), seg.translated
+                        default_value = st.session_state.get(
+                            key, st.session_state.edited_texts.get((fname, seg.id), seg.translated or seg.original)
                         )
                         label_warning = f"({'⚠️ ' + '; '.join(seg.validation_notes) if seg.validation_notes else 'OK'})"
                         new_value = st.text_area(
@@ -1094,8 +1098,8 @@ if st.session_state.results:
             try:
                 # Sincronizar los segmentos con las ediciones
                 for seg in segments:
-                    if (fname, seg.id) in st.session_state.edited_texts:
-                        seg.translated = st.session_state.edited_texts[(fname, seg.id)]
+                    val = st.session_state.get(f"edit_{fname}_{seg.id}", st.session_state.edited_texts.get((fname, seg.id), seg.translated))
+                    seg.translated = val
                 file_bytes_out = export_segments(segments, export_format)
                 mime_map = {
                     "txt": "text/plain",

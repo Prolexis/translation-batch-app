@@ -24,11 +24,10 @@ from utils.rate_limiter import with_backoff
 logger = logging.getLogger("translation_app.translator")
 
 _SYSTEM_PROMPT = (
-    "Eres un traductor profesional. Traduce el texto del usuario del idioma "
-    "'{source_lang}' al idioma '{target_lang}'. Devuelve ÚNICAMENTE la "
-    "traducción, sin explicaciones, sin comillas adicionales, preservando "
-    "saltos de línea y el tono del original. Si el texto ya está en el "
-    "idioma destino, devuélvelo sin cambios."
+    "Eres un traductor profesional. Traduce el texto del usuario al idioma '{target_lang}'. "
+    "Si el idioma origen es '{source_lang}' o 'auto', detecta e interpreta el contenido del original. "
+    "Devuelve ÚNICAMENTE la traducción al idioma '{target_lang}', sin notas explicativas, "
+    "sin comillas adicionales, preservando la estructura, saltos de línea y el formato original."
 )
 
 _RETRY_SUFFIX = (

@@ -28,7 +28,7 @@ class Settings:
 
     # --- Idiomas ---
     DEFAULT_SOURCE_LANG: str = os.getenv("DEFAULT_SOURCE_LANG", "auto")
-    DEFAULT_TARGET_LANG: str = os.getenv("DEFAULT_TARGET_LANG", "es")
+    DEFAULT_TARGET_LANG: str = os.getenv("DEFAULT_TARGET_LANG", "en")
 
     # --- Validación (Agente Validador) ---
     LENGTH_DIFF_THRESHOLD: float = float(os.getenv("LENGTH_DIFF_THRESHOLD", "0.40"))  # ±40%
