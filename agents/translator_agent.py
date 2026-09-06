@@ -67,12 +67,16 @@ class TranslatorAgent:
         self._parser = StrOutputParser()
 
     def _build_chain(self, retry_reason: str = None):
-        system = _SYSTEM_PROMPT
+        system = (
+            "You are an expert professional translator. You must translate any given source text accurately and directly into {target_name}.\n"
+            "Output ONLY the translated text without any explanation, markdown commentary, or introductory phrases. "
+            "Preserve original line breaks, numbers, currency symbols, proper names, and formatting."
+        )
         if retry_reason:
-            system = system + _RETRY_SUFFIX.format(retry_reason=retry_reason)
+            system += f"\n\nCRITICAL FIX: A previous translation attempt was rejected due to: {retry_reason}. Fix this specifically and ensure the output is strictly in {{target_name}}."
         prompt = ChatPromptTemplate.from_messages([
             ("system", system),
-            ("human", "{text}"),
+            ("human", "Translate the following source text from {source_name} into {target_name}. Return ONLY the direct translation in {target_name}:\n\n{text}"),
         ])
         return prompt | self._llm | self._parser
 
