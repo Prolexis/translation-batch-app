@@ -363,13 +363,24 @@ def _contrast_text_color(hex_color: str) -> str:
 
 def render_highlighted_html(segments_text: List[str], colors: List[str]) -> str:
     blocks = []
-    for text, color in zip(segments_text, colors):
+    for i, (text, color) in enumerate(zip(segments_text, colors)):
         safe_text = html.escape(text).replace("\n", "<br>")
         fg = _contrast_text_color(color)
+        tag_bg = "rgba(0,0,0,0.18)" if fg == "#000000" else "rgba(255,255,255,0.22)"
+        border_col = "rgba(0,0,0,0.08)" if fg == "#000000" else "rgba(255,255,255,0.12)"
         blocks.append(
-            f'<div style="background-color:{color}; color:{fg}; '
-            f'padding:8px 10px; border-radius:6px; margin-bottom:8px; '
-            f'font-size:0.92rem; line-height:1.4;">{safe_text}</div>'
+            f'<div class="segment-pill" style="background-color:{color}; color:{fg}; '
+            f'padding:12px 14px; border-radius:10px; margin-bottom:10px; '
+            f'font-size:0.94rem; line-height:1.55; position:relative; '
+            f'border: 1px solid {border_col}; box-shadow: 0 4px 12px rgba(0,0,0,0.15); '
+            f'transition: transform 0.15s ease, box-shadow 0.15s ease;">'
+            f'<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">'
+            f'<span style="font-size:0.75rem; font-weight:700; background:{tag_bg}; '
+            f'padding:2px 8px; border-radius:6px; letter-spacing:0.5px;">Segmento {i + 1}</span>'
+            f'<span style="font-size:0.72rem; opacity:0.85;">{len(text)} caracteres</span>'
+            f'</div>'
+            f'<div>{safe_text}</div>'
+            f'</div>'
         )
     return "\n".join(blocks)
 
@@ -801,7 +812,103 @@ st.set_page_config(
     page_title="Traducción por Lotes con Agentes (Gemini)",
     page_icon="🌐",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
+
+# Inyección de estilos CSS avanzados (Glassmorphism + Modern Typography)
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Outfit', sans-serif !important;
+        letter-spacing: -0.02em;
+    }
+
+    /* Hero Glassmorphic Card */
+    .hero-banner {
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.85) 100%);
+        border: 1px solid rgba(99, 102, 241, 0.25);
+        border-radius: 16px;
+        padding: 24px 28px;
+        margin-bottom: 24px;
+        box-shadow: 0 10px 30px 0 rgba(0, 0, 0, 0.35);
+        backdrop-filter: blur(12px);
+    }
+
+    .hero-title {
+        font-size: 2.1rem;
+        font-weight: 800;
+        background: linear-gradient(135deg, #818CF8 0%, #C084FC 50%, #F472B6 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin-bottom: 8px;
+    }
+
+    .agent-pipeline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 14px;
+    }
+
+    .agent-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 30px;
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #E2E8F0;
+        transition: all 0.2s ease;
+    }
+
+    .agent-pill:hover {
+        background: rgba(99, 102, 241, 0.25);
+        border-color: rgba(99, 102, 241, 0.5);
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+    }
+
+    /* Metric cards styling */
+    [data-testid="stMetric"] {
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.7));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 12px;
+        padding: 12px 16px;
+        box-shadow: 0 4px 14px rgba(0,0,0,0.2);
+    }
+
+    /* Custom scrollbars */
+    ::-webkit-scrollbar {
+        width: 7px;
+        height: 7px;
+    }
+    ::-webkit-scrollbar-track {
+        background: rgba(15, 23, 42, 0.4);
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: rgba(99, 102, 241, 0.45);
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: rgba(99, 102, 241, 0.75);
+    }
+
+    .segment-pill:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 16px rgba(0,0,0,0.22) !important;
+    }
+</style>
+""", unsafe_allow_html=True)
 
 STATUS_LABELS = {
     "pendiente": "⏳ Pendiente",
@@ -868,7 +975,7 @@ init_session_state()
 
 # --- Barra lateral (Configuración) ---
 with st.sidebar:
-    st.header("⚙️ Configuración")
+    st.markdown("### ⚙️ Configuración del Sistema")
 
     # Gestión de GEMINI_API_KEY
     env_api_key = settings.GEMINI_API_KEY.strip()
@@ -891,6 +998,9 @@ with st.sidebar:
         )
         if not api_key_input:
             st.warning("⚠️ Debes ingresar tu GEMINI_API_KEY para poder procesar.")
+
+    st.markdown("---")
+    st.markdown("#### 🌐 Parámetros de Traducción")
 
     col_a, col_b = st.columns(2)
     source_keys = list(LANGUAGE_OPTIONS_SOURCE.keys())
@@ -928,22 +1038,31 @@ with st.sidebar:
 
     st.markdown("---")
     st.caption(
-        f"Umbral de longitud: ±{settings.LENGTH_DIFF_THRESHOLD:.0%} · "
-        f"Reintentos máx./segmento: {settings.MAX_RETRIES} · "
-        f"Llamadas máx./min: {settings.MAX_CALLS_PER_MINUTE}"
+        f"**Umbral de longitud:** ±{settings.LENGTH_DIFF_THRESHOLD:.0%} · "
+        f"**Reintentos:** {settings.MAX_RETRIES} · "
+        f"**Rate limit:** {settings.MAX_CALLS_PER_MINUTE} req/min"
     )
 
-# --- Cabecera Principal ---
-st.title("🌐 Sistema de Traducción por Lotes con Agentes LangChain + Gemini")
-st.write(
-    "Sube varios documentos (`.txt`, `.docx`, `.pdf`), y un pipeline de "
-    "**4 agentes autónomos** (extractor → traductor → validador → alineador) los procesará "
-    "en lote, mostrando resultados en vivo con verificación cruzada por colores."
-)
+# --- Cabecera Principal (Hero Banner) ---
+st.markdown("""
+<div class="hero-banner">
+    <div class="hero-title">🌐 Sistema de Traducción por Lotes con Agentes</div>
+    <div style="color: #94A3B8; font-size: 0.95rem; line-height: 1.5;">
+        Sube múltiples documentos (<code>.txt</code>, <code>.docx</code>, <code>.pdf</code>) y un equipo coordinado de 
+        <strong>4 agentes inteligentes</strong> procesará el lote con validación cruzada y verificación visual por colores en tiempo real.
+    </div>
+    <div class="agent-pipeline">
+        <span class="agent-pill">📄 1. Extractor</span>
+        <span class="agent-pill">🌐 2. Traductor (Gemini Flash-Lite)</span>
+        <span class="agent-pill">🛡️ 3. Validador Automático</span>
+        <span class="agent-pill">🔗 4. Alineador Semántico</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 # --- 1. Carga de Archivos ---
 uploaded_files = st.file_uploader(
-    "Sube uno o más archivos",
+    "📁 Arrastra o selecciona tus archivos para procesar en lote:",
     type=["txt", "docx", "pdf"],
     accept_multiple_files=True,
 )
@@ -956,9 +1075,9 @@ if uploaded_files:
 
 # Tabla de estado de archivos
 if st.session_state.uploaded_map:
-    st.subheader("📋 Estado de archivos")
+    st.subheader("📋 Estado de Archivos del Lote")
     status_rows = [
-        {"Archivo": fname, "Estado": STATUS_LABELS.get(status, status)}
+        {"Archivo": fname, "Tamaño": f"{len(st.session_state.uploaded_map[fname])/1024:.1f} KB", "Estado": STATUS_LABELS.get(status, status)}
         for fname, status in st.session_state.files_status.items()
     ]
     st.table(status_rows)
@@ -966,18 +1085,18 @@ if st.session_state.uploaded_map:
 # --- 2. Procesamiento del Lote ---
 src_label = LANGUAGE_OPTIONS_SOURCE.get(source_lang, source_lang)
 tgt_label = LANGUAGE_OPTIONS_TARGET.get(target_lang, target_lang)
-st.info(f"🌐 **Ruta de traducción activa:** {src_label} ➔ **{tgt_label}** *(Modifícala en la barra lateral izquierda si deseas otro idioma destino)*")
+st.info(f"🌐 **Ruta activa:** {src_label} ➔ **{tgt_label}** *(Ajusta los idiomas en la barra lateral)*")
 
 run_col1, run_col2, run_col3 = st.columns([2, 2, 2])
 with run_col1:
     start_clicked = st.button(
-        "🚀 Procesar lote",
+        "🚀 Procesar Lote",
         disabled=st.session_state.processing or not st.session_state.uploaded_map,
         use_container_width=True,
         type="primary",
     )
 with run_col2:
-    if st.button("🗑️ Limpiar todo / Nuevo lote", disabled=st.session_state.processing, use_container_width=True):
+    if st.button("🗑️ Limpiar Todo / Nuevo Lote", disabled=st.session_state.processing, use_container_width=True):
         st.session_state.files_status.clear()
         st.session_state.results.clear()
         st.session_state.uploaded_map.clear()
@@ -1039,13 +1158,13 @@ if start_clicked:
                 else:
                     st.error(f"❌ Error en {fname}: {context.get('error')}")
 
-        overall_progress.progress(1.0, text="Lote completado.")
+        overall_progress.progress(1.0, text="Lote completado con éxito.")
         st.session_state.processing = False
         st.rerun()
 
 # --- 3. Revisión, Verificación Cruzada y Edición ---
 if st.session_state.results:
-    st.subheader("🔍 Revisión y verificación cruzada")
+    st.markdown("### 🔍 Resultados y Verificación Cruzada")
 
     # Botón global de descarga de lote en ZIP si hay archivos procesados con éxito
     valid_results = [
@@ -1055,17 +1174,18 @@ if st.session_state.results:
     if valid_results:
         zip_bytes = create_batch_zip(st.session_state.results, export_format)
         st.download_button(
-            label=f"📦 Descargar lote completo (.ZIP con archivos .{export_format})",
+            label=f"📦 Descargar Lote Completo (.ZIP con archivos .{export_format})",
             data=zip_bytes,
             file_name=f"traducciones_lote_{export_format}.zip",
             mime="application/zip",
             key="download_all_zip",
+            type="primary",
         )
         st.markdown("")
 
     for fname, context in st.session_state.results.items():
         status = context.get("file_status", "pendiente")
-        with st.expander(f"{STATUS_LABELS.get(status, status)} — {fname}", expanded=(status != "error")):
+        with st.expander(f"{STATUS_LABELS.get(status, status)} — 📄 {fname}", expanded=(status != "error")):
 
             if context.get("error"):
                 st.error(context["error"])
@@ -1082,18 +1202,18 @@ if st.session_state.results:
             # Métricas visuales del archivo (en lugar de solo un caption plano)
             m1, m2, m3, m4 = st.columns(4)
             with m1:
-                st.metric(label="Segmentos", value=len(segments))
+                st.metric(label="📊 Segmentos Extraídos", value=len(segments))
             with m2:
-                st.metric(label="Tasa de advertencia", value=f"{error_rate:.1%}")
+                st.metric(label="🛡️ Tasa de Advertencia", value=f"{error_rate:.1%}")
             with m3:
-                st.metric(label="Tiempo", value=f"{duration:.1f}s")
+                st.metric(label="⚡ Tiempo Total", value=f"{duration:.1f}s")
             with m4:
-                st.metric(label="Estado final", value=STATUS_LABELS.get(status, status))
+                st.metric(label="🎯 Estado Final", value=STATUS_LABELS.get(status, status))
 
             st.markdown("---")
 
             # Vista previa sincronizada de solo lectura con scroll interno
-            st.markdown("##### 📖 Vista previa de solo lectura (resaltado por colores)")
+            st.markdown("##### 📖 Vista Previa Sincronizada (Verificación Cruzada por Color)")
             originals_text = [s.original for s in segments]
             translated_text_display = [
                 st.session_state.get(f"edit_{fname}_{s.id}", st.session_state.edited_texts.get((fname, s.id), s.translated or s.original))
@@ -1103,18 +1223,18 @@ if st.session_state.results:
 
             col_orig, col_trans = st.columns(2)
             with col_orig:
-                st.markdown("**Texto original**")
-                with st.container(height=380):
+                st.markdown(f"**📄 Documento Original ({source_lang.upper()})**")
+                with st.container(height=390):
                     st.markdown(render_highlighted_html(originals_text, colors), unsafe_allow_html=True)
 
             with col_trans:
-                st.markdown("**Texto traducido**")
-                with st.container(height=380):
+                st.markdown(f"**🌐 Traducción Generada ({target_lang.upper()})**")
+                with st.container(height=390):
                     st.markdown(render_highlighted_html(translated_text_display, colors), unsafe_allow_html=True)
 
             # Edición manual por segmento en contenedor colapsable separado
-            with st.expander("✏️ Edición manual por segmento (opcional)", expanded=False):
-                st.caption("Modifica cualquier segmento antes de exportar. Los cambios se reflejan en la vista previa y en la descarga.")
+            with st.expander("✏️ Editor Manual de Segmentos (Opcional)", expanded=False):
+                st.caption("Puedes modificar el texto de cualquier segmento antes de exportar. Los cambios se actualizarán en la descarga.")
                 with st.container(height=320):
                     for seg in segments:
                         key = f"edit_{fname}_{seg.id}"
@@ -1145,7 +1265,7 @@ if st.session_state.results:
                 }
                 out_name = fname.rsplit(".", 1)[0] + f".{export_format}"
                 st.download_button(
-                    label=f"⬇️ Descargar traducción ({export_format.upper()})",
+                    label=f"⬇️ Descargar '{out_name}' ({export_format.upper()})",
                     data=file_bytes_out,
                     file_name=out_name,
                     mime=mime_map[export_format],
@@ -1154,9 +1274,9 @@ if st.session_state.results:
             except UnsupportedFormatError as exc:
                 st.error(str(exc))
 
-    with st.expander("🧠 Historial de agentes (memoria compartida)"):
+    with st.expander("🧠 Registro de Auditoría de Agentes (Memoria Compartida)"):
         st.caption(
-            "Registro de eventos y decisiones generadas por cada agente en la memoria del pipeline."
+            "Historial de eventos, etapas y decisiones generadas por cada agente en la memoria del pipeline."
         )
         for fname, context in st.session_state.results.items():
             for line in context.get("memory_log", []):
