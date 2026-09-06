@@ -494,34 +494,28 @@ if active_context and active_context.get("segments"):
                     st.markdown(f"### {curr_sec}")
 
                 is_m = (s.id in st.session_state.marked_ids)
-                css_class = "paragraph-marked" if is_m else "paragraph-normal"
-                badge_class = "citation-badge-marked" if is_m else "citation-badge"
-                badge_text = f"⭐ MARCADO · {s.short_provenance}" if is_m else s.short_provenance
 
-                p_col1, p_col2 = st.columns([10, 2])
-                with p_col1:
-                    st.markdown(f"""
-                    <div class="{css_class}">
-                        <span class="{badge_class}">{badge_text}</span>
-                        <div style="font-size: 0.98rem; line-height: 1.6; color: {'#000000' if is_m else '#F1F5F9'};">
-                            {html.escape(s.translated or s.original)}
-                        </div>
-                        {f'<div style="font-size: 0.82rem; font-weight: 600; font-style: italic; margin-top: 6px; color: #4338CA;">📌 {s.provenance_label}</div>' if is_m else ''}
-                    </div>
-                    """, unsafe_allow_html=True)
-
-                with p_col2:
-                    btn_text = "❌ Quitar" if is_m else "⭐ Marcar"
-                    btn_type = "secondary" if is_m else "primary"
-                    if st.button(btn_text, key=f"btn_preview_mark_{s.id}", use_container_width=True, type=btn_type):
+                with st.container(border=True):
+                    p_col1, p_col2 = st.columns([10, 2])
+                    with p_col1:
                         if is_m:
-                            st.session_state.marked_ids.remove(s.id)
-                            st.toast(f"Párrafo {s.id + 1} desmarcado", icon="🗑️")
+                            st.warning(f"⭐ **PÁRRAFO MARCADO PARA CITACIÓN** · `{s.short_provenance}`")
+                            st.markdown(f"**{s.translated or s.original}**")
+                            st.caption(f"📌 *{s.provenance_label}*")
                         else:
-                            st.session_state.marked_ids.add(s.id)
-                            st.toast(f"Párrafo {s.id + 1} marcado con procedencia exacta", icon="⭐")
-                        st.session_state.selected_paragraph_idx = i
-                        st.rerun()
+                            st.caption(f"🏷️ `{s.short_provenance}`")
+                            st.write(s.translated or s.original)
+
+                    with p_col2:
+                        btn_text = "❌ Quitar" if is_m else "⭐ Marcar"
+                        btn_type = "secondary" if is_m else "primary"
+                        if st.button(btn_text, key=f"btn_prev_mark_{s.id}", use_container_width=True, type=btn_type):
+                            if is_m:
+                                st.session_state.marked_ids.remove(s.id)
+                            else:
+                                st.session_state.marked_ids.add(s.id)
+                            st.session_state.selected_paragraph_idx = i
+                            st.rerun()
 
         else:
             # Vista Bilingüe Sincronizada (Lado a Lado)
@@ -530,30 +524,36 @@ if active_context and active_context.get("segments"):
             with col_left:
                 st.markdown(f"#### 📄 Documento Original ({source_lang.upper()})")
                 with st.container(height=520):
+                    left_html_blocks = []
                     for s in segments:
                         is_m = (s.id in st.session_state.marked_ids)
-                        bg = "#FEF08A" if is_m else "rgba(255, 255, 255, 0.05)"
-                        fg = "#000000" if is_m else "#E2E8F0"
-                        st.markdown(f"""
-                        <div style="background:{bg}; color:{fg}; padding:10px 12px; border-radius:8px; margin-bottom:10px; font-size:0.92rem; border-left: 4px solid {'#F59E0B' if is_m else '#6366F1'};">
-                            <strong style="color: {'#B45309' if is_m else '#818CF8'}; font-size:0.75rem;">[{s.short_provenance}]</strong><br>
-                            {html.escape(s.original)}
-                        </div>
-                        """, unsafe_allow_html=True)
+                        bg = "rgba(254, 240, 138, 0.2)" if is_m else "rgba(255, 255, 255, 0.04)"
+                        fg = "#FEF08A" if is_m else "#E2E8F0"
+                        border_color = "#F59E0B" if is_m else "#6366F1"
+                        star = "⭐ " if is_m else ""
+                        left_html_blocks.append(
+                            f'<div style="background:{bg}; color:{fg}; padding:10px 14px; border-radius:8px; margin-bottom:10px; font-size:0.92rem; border-left: 4px solid {border_color};">'
+                            f'<strong style="font-size:0.75rem;">{star}[{html.escape(s.short_provenance)}]</strong><br>'
+                            f'{html.escape(s.original)}</div>'
+                        )
+                    st.markdown("\n".join(left_html_blocks), unsafe_allow_html=True)
 
             with col_right:
                 st.markdown(f"#### 🌐 Traducción Generada ({target_lang.upper()})")
                 with st.container(height=520):
+                    right_html_blocks = []
                     for s in segments:
                         is_m = (s.id in st.session_state.marked_ids)
-                        bg = "#FEF08A" if is_m else "rgba(255, 255, 255, 0.05)"
-                        fg = "#000000" if is_m else "#E2E8F0"
-                        st.markdown(f"""
-                        <div style="background:{bg}; color:{fg}; padding:10px 12px; border-radius:8px; margin-bottom:10px; font-size:0.92rem; border-left: 4px solid {'#F59E0B' if is_m else '#10B981'};">
-                            <strong style="color: {'#B45309' if is_m else '#34D399'}; font-size:0.75rem;">[{s.short_provenance}]</strong><br>
-                            {html.escape(s.translated or s.original)}
-                        </div>
-                        """, unsafe_allow_html=True)
+                        bg = "rgba(254, 240, 138, 0.2)" if is_m else "rgba(255, 255, 255, 0.04)"
+                        fg = "#FEF08A" if is_m else "#E2E8F0"
+                        border_color = "#F59E0B" if is_m else "#10B981"
+                        star = "⭐ " if is_m else ""
+                        right_html_blocks.append(
+                            f'<div style="background:{bg}; color:{fg}; padding:10px 14px; border-radius:8px; margin-bottom:10px; font-size:0.92rem; border-left: 4px solid {border_color};">'
+                            f'<strong style="font-size:0.75rem;">{star}[{html.escape(s.short_provenance)}]</strong><br>'
+                            f'{html.escape(s.translated or s.original)}</div>'
+                        )
+                    st.markdown("\n".join(right_html_blocks), unsafe_allow_html=True)
 
     # --------------------------------------------------------------------------
     # Pestaña 2: Inspector de Procedencia y Edición Párrafo a Párrafo
@@ -575,28 +575,18 @@ if active_context and active_context.get("segments"):
         sel_seg = segments[current_idx]
         is_sel_marked = (sel_seg.id in st.session_state.marked_ids)
 
-        # Ficha Destacada de Procedencia (con estado visual de marcado inconfundible)
-        card_class = "provenance-card-marked" if is_sel_marked else "provenance-card"
-        marked_banner = """
-        <div style="background: #F59E0B; color: #000; font-weight: 800; font-size: 0.8rem; padding: 4px 10px; border-radius: 6px; display: inline-block; margin-bottom: 8px;">
-            ⭐ ESTE PÁRRAFO ESTÁ MARCADO Y REGISTRADO PARA CITACIÓN
-        </div>
-        """ if is_sel_marked else ""
-
-        st.markdown(f"""
-        <div class="{card_class}">
-            {marked_banner}
-            <div class="provenance-title">📍 Procedencia Exacta en el Documento Original</div>
-            <div class="provenance-body">{sel_seg.provenance_label}</div>
-            <div style="color: {'#FEF08A' if is_sel_marked else '#C7D2FE'}; font-size: 0.88rem; margin-top: 6px;">
-                Identificador: <code>seg_id #{sel_seg.id}</code> &nbsp;|&nbsp; 
-                Sección: <strong>{sel_seg.section}</strong> &nbsp;|&nbsp; 
-                Página: <strong>{sel_seg.page}</strong> &nbsp;|&nbsp; 
-                Párrafo: <strong>{sel_seg.paragraph_num}</strong> &nbsp;|&nbsp;
-                Tipo: <strong>{sel_seg.element_type}</strong>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Ficha Destacada de Procedencia (construida con componentes nativos de Streamlit para 100% estabilidad React)
+        with st.container(border=True):
+            if is_sel_marked:
+                st.warning("⭐ **PÁRRAFO MARCADO Y REGISTRADO PARA CITACIÓN / AUDITORÍA**", icon="📌")
+            st.markdown(f"#### 📍 {sel_seg.provenance_label}")
+            st.caption(
+                f"**Identificador:** `seg_id #{sel_seg.id}` &nbsp;|&nbsp; "
+                f"**Sección:** `{sel_seg.section}` &nbsp;|&nbsp; "
+                f"**Página:** `{sel_seg.page}` &nbsp;|&nbsp; "
+                f"**Párrafo:** `{sel_seg.paragraph_num}` &nbsp;|&nbsp; "
+                f"**Tipo:** `{sel_seg.element_type}`"
+            )
 
         # Botonera de Marcado y Navegación
         btn_mark_col, btn_nav_col = st.columns([3, 3])
@@ -605,10 +595,8 @@ if active_context and active_context.get("segments"):
             if st.button(mark_btn_label, key=f"btn_inspector_mark_{sel_seg.id}", use_container_width=True, type="secondary" if is_sel_marked else "primary"):
                 if is_sel_marked:
                     st.session_state.marked_ids.remove(sel_seg.id)
-                    st.toast(f"Párrafo {sel_seg.id + 1} desmarcado de la canasta", icon="🗑️")
                 else:
                     st.session_state.marked_ids.add(sel_seg.id)
-                    st.toast(f"Párrafo {sel_seg.id + 1} marcado con procedencia exacta", icon="⭐")
                 st.rerun()
 
         with btn_nav_col:
