@@ -1,128 +1,230 @@
 # 🌐 Sistema de Traducción por Lotes con Agentes LangChain + Gemini
 
-Aplicación web (Streamlit) que traduce documentos `.txt`, `.docx` y `.pdf` en
-lote, con revisión en vivo, edición manual y verificación cruzada por
-colores, orquestada mediante un pipeline de 4 agentes construidos sobre
-LangChain y la API de Gemini.
+<div align="center">
+
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=for-the-badge&logo=python&logoColor=white)](https://python.org)
+[![Streamlit](https://img.shields.io/badge/Streamlit-1.38+-FF4B4B?style=for-the-badge&logo=streamlit&logoColor=white)](https://streamlit.io)
+[![LangChain](https://img.shields.io/badge/LangChain-LCEL-1C3C3C?style=for-the-badge&logo=langchain&logoColor=white)](https://www.langchain.com/)
+[![Google Gemini](https://img.shields.io/badge/Google%20Gemini-Flash--Lite-4285F4?style=for-the-badge&logo=google&logoColor=white)](https://aistudio.google.com/)
+[![Docker](https://img.shields.io/badge/Docker-Enabled-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)](https://opensource.org/licenses/MIT)
+
+**Plataforma web de traducción inteligente de documentos por lotes (`.txt`, `.docx`, `.pdf`) con pipeline de agentes autónomos, verificación cruzada visual por colores y exportación masiva en ZIP.**
+
+</div>
 
 ---
 
-## 1. Requisitos previos
+## 📌 Tabla de Contenidos
 
-- Docker y Docker Compose (recomendado), **o** Python 3.11+ si se ejecuta local.
-- Una API Key de Google Gemini: https://aistudio.google.com/app/apikey
+1. [Características Principales](#-características-principales)
+2. [Arquitectura de los 4 Agentes](#-arquitectura-de-los-4-agentes)
+3. [Despliegue en Streamlit Community Cloud](#-despliegue-en-streamlit-community-cloud)
+4. [Ejecución con Docker](#-ejecución-con-docker-recomendado-en-local)
+5. [Ejecución Local con Python](#-ejecución-local-sin-docker)
+6. [Flujo de Uso y Funcionalidades](#-flujo-de-uso-y-funcionalidades)
+7. [Variables de Entorno y Configuración](#-variables-de-entorno-y-configuración)
+8. [Estructura del Repositorio](#-estructura-del-repositorio)
+9. [Resiliencia y Manejo de Errores](#-resiliencia-y-manejo-de-errores)
+10. [Licencia](#-licencia)
 
-## 2. Ejecución rápida con Docker (recomendado)
+---
 
+## ✨ Características Principales
+
+- 📑 **Traducción por lotes multiformato**: Soporte integral para archivos `.txt`, `.docx` y `.pdf`.
+- 🤖 **Pipeline de 4 agentes autónomos**: Extractor, Traductor (Gemini Flash-Lite), Validador Heurístico y Alineador Semántico.
+- 🎨 **Interfaz visual premium (Glassmorphism)**: Diseño dark mode moderno con tipografía *Outfit* y *Plus Jakarta Sans*, tarjetas de métricas interactivas y contenedores con scroll interno independiente.
+- 🔍 **Verificación cruzada sincronizada por colores**: Mapeo visual 1 a 1 entre segmentos originales y traducidos para una auditoría rápida y sin esfuerzo.
+- ✏️ **Editor de segmentos integrado**: Posibilidad de corregir manualmente cualquier segmento antes de exportar.
+- 📦 **Exportación individual y masiva**: Descarga individual por archivo en su formato original/elegido o descarga global del lote en un único archivo `.zip`.
+- 🛡️ **Rate-limiting y Backoff Exponencial**: Control proactivo de llamadas por minuto y reintentos inteligentes ante cuotas 429 de la API de Google Gemini.
+- 🧠 **Auditoría y Memoria de Pipeline**: Registro completo de eventos y decisiones de los agentes mediante `ConversationBufferMemory`.
+
+---
+
+## 🏛️ Arquitectura de los 4 Agentes
+
+```
+[ Archivo(s) de Entrada (.txt, .docx, .pdf) ]
+                      │
+                      ▼
+┌──────────────────────────────────────────────┐
+│  1. AGENTE EXTRACTOR                         │
+│  - Parseo por formato                        │
+│  - Limpieza y segmentación inteligente       │
+└──────────────────────┬───────────────────────┘
+                      │  Lista de Segmentos (original)
+                      ▼
+┌──────────────────────────────────────────────┐
+│  2. AGENTE TRADUCTOR (LangChain + Gemini)    │
+│  - Traducción determinista LCEL              │
+│  - RateLimiter & Backoff exponencial         │
+└──────────────────────┬───────────────────────┘
+                      │  Segmentos traducidos
+                      ▼
+┌──────────────────────────────────────────────┐
+│  3. AGENTE VALIDADOR                         │
+│  - Análisis de longitud y retención léxica   │
+│  - Reintentos automáticos si es sospechoso   │
+└──────────────────────┬───────────────────────┘
+                      │  Segmentos validados
+                      ▼
+┌──────────────────────────────────────────────┐
+│  4. AGENTE ALINEADOR                         │
+│  - Asignación de paleta cromática cíclica    │
+│  - Validación semántica (Embeddings opcional)│
+└──────────────────────┬───────────────────────┘
+                      │
+                      ▼
+[ Vista Previa Interactiva + Exportación .TXT/.DOCX/.PDF / .ZIP ]
+```
+
+---
+
+## 🚀 Despliegue en Streamlit Community Cloud
+
+Para desplegar la aplicación en la nube de Streamlit de forma gratuita:
+
+1. Haz un **Fork** o sube este repositorio a tu cuenta de GitHub.
+2. Inicia sesión en [share.streamlit.io](https://share.streamlit.io/).
+3. Haz clic en **"New app"** y selecciona:
+   - **Repository:** `tu-usuario/translation_batch_app`
+   - **Branch:** `main`
+   - **Main file path:** `app.py`
+4. En **"Advanced settings" ➔ "Secrets"**, añade tu API Key de Gemini:
+   ```toml
+   GEMINI_API_KEY = "tu_api_key_de_gemini_aqui"
+   GEMINI_MODEL = "gemini-3.1-flash-lite"
+   DEFAULT_SOURCE_LANG = "auto"
+   DEFAULT_TARGET_LANG = "en"
+   ```
+5. Haz clic en **"Deploy"**. ¡La aplicación estará en línea en segundos!
+
+---
+
+## 🐳 Ejecución con Docker (Recomendado en Local)
+
+### 1. Clonar el repositorio y configurar variables
 ```bash
-# 1. Clona/descomprime el proyecto y entra a la carpeta
+git clone https://github.com/Prolexis/translation-batch-app.git
 cd translation_batch_app
-
-# 2. Copia el archivo de entorno de ejemplo y coloca tu API Key
 cp .env.example .env
-nano .env        # reemplaza GEMINI_API_KEY=coloca_aqui_tu_api_key
+```
+Edita el archivo `.env` y coloca tu API Key de Gemini:
+```ini
+GEMINI_API_KEY=tu_api_key_aqui
+```
 
-# 3. Construye y levanta el contenedor
+### 2. Levantar el contenedor con Docker Compose
+```bash
 docker compose up --build
+```
+Abre tu navegador en: **`http://localhost:8501`**
 
-# 4. Abre la aplicación
-# http://localhost:8501
+Para detener el contenedor:
+```bash
+docker compose down
 ```
 
-Para detener: `docker compose down`.
-La API Key también puede pegarse directamente en el campo de la barra
-lateral de la app si prefieres no usar el archivo `.env`.
+---
 
-### Ejecución con `docker run` (sin compose)
+## 💻 Ejecución Local (Sin Docker)
 
-```bash
-docker build -t batch-translation-agents .
-docker run --rm -p 8501:8501 --env-file .env batch-translation-agents
-```
-
-## 3. Ejecución local sin Docker (opcional)
+Si prefieres ejecutar directamente en tu entorno Python local:
 
 ```bash
-python3 -m venv venv
-source venv/bin/activate          # Windows: venv\Scripts\activate
+# 1. Crear entorno virtual
+python -m venv venv
+
+# 2. Activar entorno
+# En Windows (PowerShell):
+venv\Scripts\Activate.ps1
+# En Linux/macOS:
+source venv/bin/activate
+
+# 3. Instalar dependencias
 pip install -r requirements.txt
-cp .env.example .env              # completa tu GEMINI_API_KEY
+
+# 4. Configurar variables de entorno
+cp .env.example .env
+
+# 5. Ejecutar la app
 streamlit run app.py
 ```
 
-## 4. Uso de la aplicación
+---
 
-1. En la barra lateral, confirma/edita tu `GEMINI_API_KEY`, idioma origen,
-   idioma destino, modo de alineación (`position` o `semantic`) y formato
-   de exportación.
-2. Sube 2 o más archivos (`.txt`, `.docx`, `.pdf`) en el cargador de
-   archivos. Aparecerán en la **tabla de estado** como "Pendiente".
-3. Pulsa **"🚀 Procesar lote"**. Verás la barra de progreso global y,
-   apenas cada archivo termina, su resultado se despliega de inmediato
-   (revisión en vivo) sin esperar a que termine el lote completo.
-4. Para cada archivo, se muestran dos columnas: **original** y
-   **traducido**, ambas resaltadas con colores; el segmento N del original
-   y el segmento N de la traducción comparten exactamente el mismo color.
-5. El texto traducido es editable directamente en los cuadros de texto
-   antes de exportar.
-6. Usa el botón **"⬇️ Descargar traducción"** para exportar cada archivo en
-   el formato elegido (`.txt`, `.docx` o `.pdf`).
-7. El expander **"🧠 Historial de agentes"** muestra la traza completa de lo
-   que hizo cada agente (útil para auditoría/depuración).
+## 📖 Flujo de Uso y Funcionalidades
 
-Se incluyen 3 archivos de prueba en `sample_files/` (uno por formato) para
-probar la demo de inmediato.
+1. **Configuración en Barra Lateral**:
+   - **API Key**: Detectada automáticamente desde `.env` o ingresada manualmente de forma segura.
+   - **Idioma Origen**: `🌐 Detección automática (auto)` o selección manual de idioma.
+   - **Idioma Destino**: Idioma al cual se traducirá el lote (por defecto `🇬🇧 Inglés`).
+   - **Modo de Alineación**: `position` (rápido por párrafo) o `semantic` (análisis con Embeddings).
+   - **Formato de Exportación**: `.docx`, `.pdf` o `.txt`.
+2. **Carga de Documentos**: Arrastra uno o múltiples archivos.
+3. **Procesar Lote**: Haz clic en **🚀 Procesar Lote** para traducir en tiempo real.
+4. **Resultados y Verificación**:
+   - Inspecciona las métricas de cada archivo (Segmentos, Tasa de advertencia, Tiempo).
+   - Compara en el visor de doble columna con scroll sincronizado por color.
+   - Edita segmentos puntuales si lo deseas en el editor colapsable.
+5. **Descarga**: Exporta individualmente cada documento o pulsa **📦 Descargar Lote Completo (.ZIP)**.
 
-## 5. Estructura del proyecto
+---
+
+## ⚙️ Variables de Entorno y Configuración
+
+| Variable | Valor por Defecto | Descripción |
+|---|---|---|
+| `GEMINI_API_KEY` | *(Requerido)* | Clave de API de Google Gemini |
+| `GEMINI_MODEL` | `gemini-3.1-flash-lite` | Modelo de lenguaje utilizado para traducción |
+| `GEMINI_EMBEDDING_MODEL` | `models/text-embedding-004` | Modelo para validación semántica |
+| `DEFAULT_SOURCE_LANG` | `auto` | Idioma de origen por defecto |
+| `DEFAULT_TARGET_LANG` | `en` | Idioma objetivo por defecto |
+| `MAX_CALLS_PER_MINUTE` | `30` | Límite preventivo de llamadas salientes |
+| `BACKOFF_BASE_SECONDS` | `2.0` | Tiempo base para reintentos con backoff |
+| `BACKOFF_MAX_RETRIES` | `5` | Número máximo de reintentos ante error 429 |
+| `LENGTH_DIFF_THRESHOLD` | `0.40` | Umbral de discrepancia de longitud (±40%) |
+| `MAX_RETRIES` | `2` | Reintentos por segmento del Agente Validador |
+
+---
+
+## 📁 Estructura del Repositorio
 
 ```
 translation_batch_app/
-├── app.py                     # Interfaz Streamlit (UI + orquestación de alto nivel)
-├── config.py                  # Configuración centralizada (env vars, umbrales, colores)
+├── app.py                     # Aplicación Streamlit completa y orquestador
+├── config.py                  # Dataclass de configuración y variables de entorno
 ├── agents/
-│   ├── extractor_agent.py     # Agente Extractor
-│   ├── translator_agent.py    # Agente Traductor (LangChain + Gemini)
-│   ├── validator_agent.py     # Agente Validador (criterios medibles + reintentos)
-│   ├── aligner_agent.py       # Agente de Alineación (posición o embeddings)
-│   └── orchestrator.py        # Orquestador (equivalente a AgentExecutor/LCEL)
+│   ├── extractor_agent.py     # Agente Extractor de texto
+│   ├── translator_agent.py    # Agente Traductor (LCEL + Gemini)
+│   ├── validator_agent.py     # Agente Validador de calidad
+│   ├── aligner_agent.py       # Agente Alineador (posición / embeddings)
+│   └── orchestrator.py        # Orquestador del pipeline
 ├── utils/
-│   ├── file_handlers.py       # Extracción/exportación .txt/.docx/.pdf
-│   ├── colors.py               # Paleta cíclica + render HTML resaltado
-│   └── rate_limiter.py         # Rate limiting + backoff exponencial (429)
-├── sample_files/               # 3 archivos de prueba (.txt, .docx, .pdf)
-├── requirements.txt
-├── Dockerfile
-├── docker-compose.yml
-├── .env.example
-└── ARCHITECTURE.md              # Documento de arquitectura de agentes (entregable)
+│   ├── file_handlers.py       # Handlers para .txt, .docx y .pdf
+│   ├── colors.py              # Paleta cromática y renderizador HTML
+│   └── rate_limiter.py        # RateLimiter y decorador with_backoff
+├── sample_files/              # Documentos de prueba (.txt, .docx, .pdf)
+├── Dockerfile                 # Imagen Docker optimizada
+├── docker-compose.yml         # Despliegue con un comando
+├── requirements.txt           # Dependencias de Python
+├── .env.example               # Plantilla de variables de entorno
+├── LICENSE                    # Licencia MIT
+└── README.md                  # Documentación del proyecto
 ```
 
-Ver **`ARCHITECTURE.md`** para el detalle de roles, entradas/salidas y
-justificación de cada agente (entregable de documentación pedido en el
-enunciado).
+---
 
-## 6. Manejo de errores contemplado
+## 🛡️ Resiliencia y Manejo de Errores
 
-| Escenario | Manejo |
-|---|---|
-| Formato de archivo no soportado | `UnsupportedFormatError`, se marca el archivo como "error" en la tabla sin detener el resto del lote. |
-| Archivo corrupto / PDF cifrado / docx dañado | `CorruptFileError`, capturada en el Agente Extractor. |
-| PDF escaneado sin texto extraíble | Se informa el error explícitamente ("posible PDF sin OCR"). |
-| Error 429 / cuota excedida de Gemini | `utils/rate_limiter.with_backoff`: reintenta con backoff exponencial + jitter (hasta `BACKOFF_MAX_RETRIES`). |
-| Timeout / servicio no disponible (503) | Mismo mecanismo de backoff que 429. |
-| Traducción sospechosa (longitud o vocabulario) | Agente Validador solicita reintento al Traductor (máx. `MAX_RETRIES` por segmento). |
-| Fallo irrecuperable en un segmento | Se marca `status="error"`, se contabiliza en la tasa de error del archivo, no bloquea los demás segmentos/archivos. |
-| API Key ausente/ inválida | La UI bloquea el botón "Procesar lote" y muestra un mensaje explícito. |
+- **Límites de Cuota (429 / Quota Exceeded)**: Decorador `@with_backoff` con jitter aleatorio para absorber picos de tasa de llamadas.
+- **Archivos Dañados o PDFs sin OCR**: Captura granular con `CorruptFileError` y `UnsupportedFormatError` sin detener el procesamiento del resto del lote.
+- **Validación Heurística de Traducción**: Detección automática de textos no traducidos o discrepancias anómalas con reintento automático.
 
-## 7. Notas y límites conocidos
+---
 
-- El extractor de PDF depende de `pypdf`; PDFs generados solo con líneas de
-  texto sin marcas de párrafo (p. ej. un PDF armado a mano con `canvas` de
-  bajo nivel) pueden extraerse como un único bloque. PDFs exportados desde
-  Word/Google Docs/LibreOffice conservan la estructura de párrafos
-  correctamente.
-- El modo de alineación `semantic` consume cuota adicional de la API
-  (embeddings) y es más lento; se recomienda para lotes pequeños o cuando
-  se sospeche reordenamiento de segmentos.
-- La app está pensada para uso de un único usuario por contenedor (el
-  estado vive en `st.session_state`, propio de la sesión del navegador).
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia **MIT**. Consulta el archivo [LICENSE](file:///c:/Users/Usuario/Documents/ghitub/translation_batch_app/LICENSE) para más detalles.
