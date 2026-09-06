@@ -106,16 +106,42 @@ def extract_pdf(file_bytes: bytes) -> List[str]:
     return paragraphs
 
 
+def _group_paragraphs(raw_paragraphs: List[str], max_chars: int = 1200) -> List[str]:
+    """Agrupa párrafos pequeños para optimizar la velocidad y llamadas a la API."""
+    if not raw_paragraphs:
+        return []
+    grouped = []
+    current = []
+    current_len = 0
+
+    for p in raw_paragraphs:
+        p_len = len(p)
+        if current and (current_len + p_len + 2 > max_chars):
+            grouped.append("\n\n".join(current))
+            current = [p]
+            current_len = p_len
+        else:
+            current.append(p)
+            current_len += p_len + 2
+
+    if current:
+        grouped.append("\n\n".join(current))
+
+    return grouped
+
+
 def extract_text_segments(filename: str, file_bytes: bytes) -> List[str]:
     """Punto de entrada único usado por el Agente Extractor."""
     ext = "." + filename.lower().rsplit(".", 1)[-1] if "." in filename else ""
     if ext == ".txt":
-        return extract_txt(file_bytes)
-    if ext == ".docx":
-        return extract_docx(file_bytes)
-    if ext == ".pdf":
-        return extract_pdf(file_bytes)
-    raise UnsupportedFormatError(f"Formato no soportado: {ext or 'desconocido'}")
+        raw = extract_txt(file_bytes)
+    elif ext == ".docx":
+        raw = extract_docx(file_bytes)
+    elif ext == ".pdf":
+        raw = extract_pdf(file_bytes)
+    else:
+        raise UnsupportedFormatError(f"Formato no soportado: {ext or 'desconocido'}")
+    return _group_paragraphs(raw, max_chars=1200)
 
 
 # --------------------------------------------------------------------------

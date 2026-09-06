@@ -71,12 +71,16 @@ class TranslatorAgent:
         })
         return str(result).strip()
 
-    def run(self, context: dict) -> dict:
+    def run(self, context: dict, on_progress: Optional[Callable[[str, float], None]] = None) -> dict:
         segments: List[Segment] = context.get("segments", [])
         source_lang = context.get("source_lang", settings.DEFAULT_SOURCE_LANG)
         target_lang = context.get("target_lang", settings.DEFAULT_TARGET_LANG)
+        total_segs = len(segments) or 1
 
-        for seg in segments:
+        for i, seg in enumerate(segments):
+            if on_progress:
+                frac = 0.25 + (0.45 * (i / total_segs))
+                on_progress(f"Traduciendo segmento {i + 1}/{total_segs}", frac)
             if seg.status == "ok":
                 continue
             try:

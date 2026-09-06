@@ -75,13 +75,15 @@ class TranslationOrchestrator:
         }
 
         stages = [
-            ("Extrayendo texto", self.extractor.run, 0.25),
-            ("Traduciendo con Gemini", self.translator.run, 0.60),
-            ("Validando traducción", lambda ctx: self.validator.run(ctx, self.translator), 0.85),
-            ("Alineando segmentos", self.aligner.run, 1.0),
+            ("Extrayendo texto", lambda ctx: self.extractor.run(ctx), 0.10, 0.25),
+            ("Traduciendo con Gemini", lambda ctx: self.translator.run(ctx, on_progress=on_progress), 0.25, 0.70),
+            ("Validando traducción", lambda ctx: self.validator.run(ctx, self.translator), 0.70, 0.85),
+            ("Alineando segmentos", lambda ctx: self.aligner.run(ctx), 0.85, 1.0),
         ]
 
-        for stage_name, fn, progress_fraction in stages:
+        for stage_name, fn, start_frac, end_frac in stages:
+            if on_progress:
+                on_progress(stage_name, start_frac)
             if context.get("error") and stage_name != "Extrayendo texto":
                 break
             try:
@@ -91,7 +93,7 @@ class TranslationOrchestrator:
                 context["error"] = f"Error en etapa '{stage_name}': {exc}"
                 break
             if on_progress:
-                on_progress(stage_name, progress_fraction)
+                on_progress(f"{stage_name} completado", end_frac)
 
         context["finished_at"] = time.time()
         context["duration_seconds"] = context["finished_at"] - context["started_at"]
