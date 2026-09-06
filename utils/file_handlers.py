@@ -84,9 +84,9 @@ def _clean_text(text: str) -> str:
     return text.strip()
 
 
-# Patrones de encabezados y secciones académicas
+# Patrones de encabezados y secciones académicas (secciones numéricas limitadas a 1..29 o romanos, excluyendo años como 2035.)
 _SECTION_REGEX = re.compile(
-    r"^(?:(\d+(?:\.\d+)*)\.?\s+([A-Za-z\u00C0-\u017F\s\-]{2,70})|"
+    r"^(?:(?:(?:[1-9]|1\d|2\d)(?:\.\d+)*|[IVXLCDM]+)\.?\s+([A-Za-z\u00C0-\u017F\s\-]{2,65})|"
     r"(abstract|resumen|introduction|introducci[oó]n|background|related work|"
     r"methods|methodology|metodolog[ií]a|materials and methods|results|resultados|"
     r"discussion|discusi[oó]n|conclusion|conclusions|conclusiones|"
@@ -102,6 +102,32 @@ _REFERENCES_HEADER_REGEX = re.compile(
 _MATH_FORMULA_REGEX = re.compile(
     r"(\$\$[\s\S]+?\$\$|\\\[[\s\S]+?\\\]|\\begin\{(?:equation|align|gather)\*?\}[\s\S]+?\\end\{(?:equation|align|gather)\*?\})"
 )
+
+
+def highlight_citations_html(text: str, is_marked: bool = False) -> str:
+    """Resalta visualmente con color las citas in-text [1] y autor-año (Author, Year)."""
+    if not text:
+        return ""
+    import html as _html
+    safe = _html.escape(text)
+
+    if is_marked:
+        # En párrafo marcado (fondo amarillo): badge azul índigo profundo de alto contraste
+        badge_style = "color: #1E1B4B; background: #FDE047; font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid #CA8A04;"
+    else:
+        # En párrafo normal: pastilla azul/índigo moderna con borde suave
+        badge_style = "color: #818CF8; background: rgba(99, 102, 241, 0.18); font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(99, 102, 241, 0.35);"
+
+    def _rep(m):
+        return f'<span style="{badge_style}">{m.group(0)}</span>'
+
+    # 1. Citas entre corchetes [1], [2, 3], [4-6]
+    safe = re.sub(r"\[\s*\d+(?:[\s,\-–—]+\d+)*\s*\]", _rep, safe)
+
+    # 2. Citas autor-año (Vaswani et al., 2017) o (Devlin, 2019)
+    safe = re.sub(r"\([A-Z][a-zA-Z\s\.\&]+(?:et\s+al\.?)?,?\s*(?:19|20)\d{2}[a-z]?\)", _rep, safe)
+
+    return safe
 
 
 def _detect_element_type(text: str, current_section: str, page_num: int, is_first: bool = False) -> Tuple[str, Optional[str], Optional[str]]:
@@ -127,18 +153,27 @@ def _detect_element_type(text: str, current_section: str, page_num: int, is_firs
     if page_num == 1 and is_first and len(clean_line) < 200 and not clean_line.endswith("."):
         return ("title", "Title", "")
 
-    # Detección de encabezados o secciones numeradas
-    m = _SECTION_REGEX.match(clean_line)
-    if m and len(clean_line) < 90:
-        num = m.group(1)
-        if num and "." in num and not num.endswith("."):
-            # Subsección, ej: 3.2 Methods
-            return ("heading", None, clean_line)
-        return ("heading", clean_line, "")
-
     # Abstract
     if clean_line.lower().startswith("abstract") or clean_line.lower().startswith("resumen"):
         return ("abstract", "Abstract", "")
+
+    # Detección de encabezados o secciones numeradas (con filtros anti-falsos positivos)
+    words = clean_line.split()
+    last_word = words[-1].lower() if words else ""
+    is_continuation = (
+        last_word in {"through", "and", "of", "the", "to", "in", "by", "with", "for", "from", "are", "is", "that", "which"}
+        or len(words) > 10
+        or clean_line.endswith((",", ";", "..."))
+    )
+
+    if not is_continuation:
+        m = _SECTION_REGEX.match(clean_line)
+        if m and len(clean_line) < 80:
+            num = m.group(1)
+            if num and "." in num and not num.endswith("."):
+                # Subsección, ej: 3.2 Methods
+                return ("heading", None, clean_line)
+            return ("heading", clean_line, "")
 
     return ("body", None, None)
 
@@ -470,38 +505,64 @@ def export_txt(segments: List[Segment], enriched: bool = False) -> bytes:
 
 def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
     """
-    Exporta a .DOCX.
-    Si enriched=True:
-      - Los párrafos marcados se resaltan con fondo amarillo.
-      - Se inserta una llamada / nota de procedencia exacta en letra pequeña e itálica.
+    Exporta a .DOCX con estructura académica fiel al formato del paper:
+      - Título centrado y destacado
+      - Encabezados con jerarquía (H1, H2)
+      - Abstract con sangría y cursiva
+      - Referencias bibliográficas formateadas
+      - Resaltado y nota de procedencia si enriched=True
     """
     doc = DocxDocument()
 
-    # Estilos básicos
     for s in segments:
         text = s.translated or s.original
         elem_type = s.element_type
 
         if elem_type == "title":
             p = doc.add_heading(text, level=0)
+            p.paragraph_format.space_before = Pt(12)
+            p.paragraph_format.space_after = Pt(14)
         elif elem_type == "heading":
             level = 2 if s.subsection else 1
             p = doc.add_heading(text, level=level)
+            p.paragraph_format.space_before = Pt(14)
+            p.paragraph_format.space_after = Pt(6)
+        elif elem_type == "abstract":
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.4)
+            p.paragraph_format.right_indent = Inches(0.4)
+            p.paragraph_format.space_after = Pt(10)
+            run = p.add_run(text)
+            run.italic = True
+            run.font.size = Pt(10)
+            if enriched and s.is_marked:
+                run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+        elif elem_type == "reference":
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.35)
+            p.paragraph_format.first_line_indent = Inches(-0.35)
+            p.paragraph_format.space_after = Pt(4)
+            run = p.add_run(text)
+            run.font.size = Pt(8.5)
+            if enriched and s.is_marked:
+                run.font.highlight_color = WD_COLOR_INDEX.YELLOW
         else:
             p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(6)
             run = p.add_run(text)
-
+            run.font.size = Pt(10.5)
             if enriched and s.is_marked:
-                # Resaltado visual del párrafo completo
                 run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
-                # Agregar ficha de procedencia debajo del párrafo
-                prov_p = doc.add_paragraph()
-                prov_p.paragraph_format.left_indent = Inches(0.4)
-                prov_run = prov_p.add_run(f"📌 Procedencia: {s.provenance_label}")
-                prov_run.italic = True
-                prov_run.font.size = Pt(8.5)
-                prov_run.font.color.rgb = RGBColor(79, 70, 229)  # Índigo académico
+        # Si está marcado y enriquecido, agregar nota de procedencia
+        if enriched and s.is_marked and elem_type not in ["title", "heading"]:
+            prov_p = doc.add_paragraph()
+            prov_p.paragraph_format.left_indent = Inches(0.4)
+            prov_p.paragraph_format.space_after = Pt(8)
+            prov_run = prov_p.add_run(f"📌 Procedencia: {s.provenance_label}")
+            prov_run.italic = True
+            prov_run.font.size = Pt(8.5)
+            prov_run.font.color.rgb = RGBColor(79, 70, 229)
 
     buf = io.BytesIO()
     doc.save(buf)
@@ -510,10 +571,13 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
 
 def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     """
-    Exporta a .PDF con ReportLab.
-    Si enriched=True:
-      - Dibuja un recuadro de resaltado suave detrás del texto seleccionado.
-      - Añade una nota de procedencia exacta con icono y estilo de pie de nota.
+    Exporta a .PDF con estructura y tipografía académica fiel al paper original:
+      - Título en tamaño 15pt bold
+      - Encabezados de sección en 12.5pt bold
+      - Abstract en 9.5pt cursiva con sangría
+      - Cuerpo en 10pt con interlineado óptimo
+      - Referencias en 8.5pt
+      - Cajas de resaltado y procedencia exacta si enriched=True
     """
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
@@ -521,9 +585,6 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     margin = 2 * cm
     max_width = width - 2 * margin
     y = height - margin
-    font_body, size_body, leading_body = "Helvetica", 10, 13.5
-    font_head, size_head, leading_head = "Helvetica-Bold", 13, 16
-    font_prov, size_prov, leading_prov = "Helvetica-Oblique", 8, 10
 
     def check_page_break(needed_space: float):
         nonlocal y
@@ -534,42 +595,64 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     for s in segments:
         text = s.translated or s.original
         elem_type = s.element_type
-        is_h = (elem_type in ["title", "heading"])
         is_marked = (enriched and s.is_marked)
 
-        curr_font = font_head if is_h else font_body
-        curr_size = size_head if is_h else size_body
-        curr_leading = leading_head if is_h else leading_body
+        # Configurar estilo según elemento académico
+        if elem_type == "title":
+            curr_font, curr_size, curr_leading = "Helvetica-Bold", 15, 19
+            extra_indent = 0
+            spacing_after = 14
+        elif elem_type == "heading":
+            curr_font, curr_size, curr_leading = "Helvetica-Bold", 12.5, 16
+            extra_indent = 0
+            spacing_after = 8
+        elif elem_type == "abstract":
+            curr_font, curr_size, curr_leading = "Helvetica-Oblique", 9.5, 13.5
+            extra_indent = 16
+            spacing_after = 10
+        elif elem_type == "reference":
+            curr_font, curr_size, curr_leading = "Helvetica", 8.5, 11
+            extra_indent = 8
+            spacing_after = 5
+        else:
+            curr_font, curr_size, curr_leading = "Helvetica", 10, 14
+            extra_indent = 0
+            spacing_after = 8
 
-        lines = simpleSplit(text, curr_font, curr_size, max_width - (16 if is_marked else 0))
-        block_height = len(lines) * curr_leading + (leading_prov + 8 if is_marked else 0) + 12
+        avail_width = max_width - extra_indent - (16 if is_marked else 0)
+        lines = simpleSplit(text, curr_font, curr_size, avail_width)
+        if not lines:
+            continue
+
+        prov_leading = 10
+        block_height = len(lines) * curr_leading + (prov_leading + 10 if is_marked else 0) + spacing_after
 
         check_page_break(block_height)
 
-        # Si está marcado, dibujamos caja de fondo resaltado suave
+        # Si está marcado, dibujar recuadro de resaltado
         if is_marked:
             c.saveState()
-            c.setFillColorRGB(1.0, 0.96, 0.76)  # Amarillo suave #FFF3C4
+            c.setFillColorRGB(1.0, 0.96, 0.76)  # Amarillo #FFF3C4
             c.setStrokeColorRGB(0.92, 0.70, 0.10)  # Borde ámbar
-            c.roundRect(margin - 4, y - (len(lines) * curr_leading) - 4, max_width + 8, (len(lines) * curr_leading) + 14, 4, fill=1, stroke=1)
+            c.roundRect(margin + extra_indent - 4, y - (len(lines) * curr_leading) - 4, avail_width + 8, (len(lines) * curr_leading) + 14, 4, fill=1, stroke=1)
             c.restoreState()
 
-        # Escribir texto del párrafo
+        # Renderizar texto
         c.setFont(curr_font, curr_size)
-        c.setFillColorRGB(0.1, 0.1, 0.12)
+        c.setFillColorRGB(0.08, 0.08, 0.12)
         for line in lines:
-            c.drawString(margin + (8 if is_marked else 0), y, line)
+            c.drawString(margin + extra_indent + (6 if is_marked else 0), y, line)
             y -= curr_leading
 
-        # Si está marcado, escribir nota de procedencia exacta
+        # Nota de procedencia si está marcado
         if is_marked:
-            y -= 3
-            c.setFont(font_prov, size_prov)
-            c.setFillColorRGB(0.26, 0.23, 0.72)  # Azul/Índigo
-            c.drawString(margin + 12, y, f"[Origen: {s.provenance_label}]")
-            y -= leading_prov + 6
+            y -= 2
+            c.setFont("Helvetica-Oblique", 8)
+            c.setFillColorRGB(0.26, 0.23, 0.72)
+            c.drawString(margin + extra_indent + 8, y, f"[Procedencia: {s.provenance_label}]")
+            y -= prov_leading + 4
 
-        y -= 8  # Espacio entre párrafos
+        y -= spacing_after
 
     c.save()
     return buf.getvalue()

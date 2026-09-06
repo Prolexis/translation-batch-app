@@ -30,6 +30,7 @@ from utils.file_handlers import (
     extract_academic_segments,
     export_segments,
     export_citations_dossier,
+    highlight_citations_html,
     UnsupportedFormatError,
     CorruptFileError,
 )
@@ -486,7 +487,7 @@ if active_context and active_context.get("segments"):
         )
 
         if view_mode == "Lienzo de Lectura Académica":
-            st.caption("Lectura continua del paper en español. Los párrafos marcados se destacan en amarillo con su nota de origen.")
+            st.caption("Lectura estructurada del paper traducido. Las citas [1] y (Autor, Año) se resaltan con color, y los párrafos marcados se destacan en amarillo con su nota de origen.")
             curr_sec = ""
             for i, s in enumerate(segments):
                 if s.section != curr_sec and s.section:
@@ -494,17 +495,25 @@ if active_context and active_context.get("segments"):
                     st.markdown(f"### {curr_sec}")
 
                 is_m = (s.id in st.session_state.marked_ids)
+                text_to_show = s.translated or s.original
+                colored_html = highlight_citations_html(text_to_show, is_marked=is_m)
 
                 with st.container(border=True):
                     p_col1, p_col2 = st.columns([10, 2])
                     with p_col1:
                         if is_m:
                             st.warning(f"⭐ **PÁRRAFO MARCADO PARA CITACIÓN** · `{s.short_provenance}`")
-                            st.markdown(f"**{s.translated or s.original}**")
+                            st.markdown(
+                                f'<div style="font-size: 1.02rem; line-height: 1.65; color: #FEF08A;">{colored_html}</div>',
+                                unsafe_allow_html=True,
+                            )
                             st.caption(f"📌 *{s.provenance_label}*")
                         else:
                             st.caption(f"🏷️ `{s.short_provenance}`")
-                            st.write(s.translated or s.original)
+                            st.markdown(
+                                f'<div style="font-size: 0.98rem; line-height: 1.6; color: #F1F5F9;">{colored_html}</div>',
+                                unsafe_allow_html=True,
+                            )
 
                     with p_col2:
                         btn_text = "❌ Quitar" if is_m else "⭐ Marcar"
@@ -519,7 +528,7 @@ if active_context and active_context.get("segments"):
 
         else:
             # Vista Bilingüe Sincronizada (Lado a Lado)
-            st.caption("Verificación cruzada lado a lado: correspondencia exacta por párrafos sincronizados.")
+            st.caption("Verificación cruzada lado a lado: correspondencia exacta por párrafos con citas coloreadas.")
             col_left, col_right = st.columns(2)
             with col_left:
                 st.markdown(f"#### 📄 Documento Original ({source_lang.upper()})")
@@ -527,14 +536,15 @@ if active_context and active_context.get("segments"):
                     left_html_blocks = []
                     for s in segments:
                         is_m = (s.id in st.session_state.marked_ids)
-                        bg = "rgba(254, 240, 138, 0.2)" if is_m else "rgba(255, 255, 255, 0.04)"
+                        bg = "rgba(254, 240, 138, 0.18)" if is_m else "rgba(255, 255, 255, 0.04)"
                         fg = "#FEF08A" if is_m else "#E2E8F0"
                         border_color = "#F59E0B" if is_m else "#6366F1"
                         star = "⭐ " if is_m else ""
+                        colored_orig = highlight_citations_html(s.original, is_marked=is_m)
                         left_html_blocks.append(
                             f'<div style="background:{bg}; color:{fg}; padding:10px 14px; border-radius:8px; margin-bottom:10px; font-size:0.92rem; border-left: 4px solid {border_color};">'
                             f'<strong style="font-size:0.75rem;">{star}[{html.escape(s.short_provenance)}]</strong><br>'
-                            f'{html.escape(s.original)}</div>'
+                            f'{colored_orig}</div>'
                         )
                     st.markdown("\n".join(left_html_blocks), unsafe_allow_html=True)
 
@@ -544,14 +554,15 @@ if active_context and active_context.get("segments"):
                     right_html_blocks = []
                     for s in segments:
                         is_m = (s.id in st.session_state.marked_ids)
-                        bg = "rgba(254, 240, 138, 0.2)" if is_m else "rgba(255, 255, 255, 0.04)"
+                        bg = "rgba(254, 240, 138, 0.18)" if is_m else "rgba(255, 255, 255, 0.04)"
                         fg = "#FEF08A" if is_m else "#E2E8F0"
                         border_color = "#F59E0B" if is_m else "#10B981"
                         star = "⭐ " if is_m else ""
+                        colored_trans = highlight_citations_html(s.translated or s.original, is_marked=is_m)
                         right_html_blocks.append(
                             f'<div style="background:{bg}; color:{fg}; padding:10px 14px; border-radius:8px; margin-bottom:10px; font-size:0.92rem; border-left: 4px solid {border_color};">'
                             f'<strong style="font-size:0.75rem;">{star}[{html.escape(s.short_provenance)}]</strong><br>'
-                            f'{html.escape(s.translated or s.original)}</div>'
+                            f'{colored_trans}</div>'
                         )
                     st.markdown("\n".join(right_html_blocks), unsafe_allow_html=True)
 
@@ -575,7 +586,7 @@ if active_context and active_context.get("segments"):
         sel_seg = segments[current_idx]
         is_sel_marked = (sel_seg.id in st.session_state.marked_ids)
 
-        # Ficha Destacada de Procedencia (construida con componentes nativos de Streamlit para 100% estabilidad React)
+        # Ficha Destacada de Procedencia
         with st.container(border=True):
             if is_sel_marked:
                 st.warning("⭐ **PÁRRAFO MARCADO Y REGISTRADO PARA CITACIÓN / AUDITORÍA**", icon="📌")
@@ -640,11 +651,11 @@ if active_context and active_context.get("segments"):
                 st.caption("🛡️ Integridad de citas y formato: OK")
 
     # --------------------------------------------------------------------------
-    # Pestaña 3: Reporte Ejecutivo de Traducción y Auditoría
+    # Pestaña 3: Reporte Ejecutivo de Traducción (Resumido y Claro)
     # --------------------------------------------------------------------------
     with tab_reports:
-        st.markdown("#### 📊 Reporte Ejecutivo del Proceso de Traducción")
-        st.caption("Resumen consolidado de métricas, preservación académica y auditoría de agentes.")
+        st.markdown("#### 📊 Reporte Ejecutivo de la Traducción")
+        st.caption("Resumen consolidado de métricas clave y validación académica.")
 
         rep_m1, rep_m2, rep_m3, rep_m4 = st.columns(4)
         refs_count = sum(1 for s in segments if s.element_type == "reference")
@@ -657,25 +668,21 @@ if active_context and active_context.get("segments"):
         with rep_m2:
             st.metric("Palabras Traducidas", f"{total_words:,}")
         with rep_m3:
-            st.metric("Referencias Preservadas", refs_count, help="Sección bibliográfica mantenida intacta")
+            st.metric("Referencias Protegidas", refs_count, help="Sección bibliográfica preservada intacta")
         with rep_m4:
-            st.metric("Tiempo de Proceso", f"{duration:.1f}s" if duration else "Rápido")
+            st.metric("Tiempo Total", f"{duration:.1f}s" if duration else "Rápido")
 
         st.markdown("---")
-        st.markdown("##### 🛡️ Auditoría de Integridad Académica")
-        st.write({
-            "Archivo analizado": active_fname,
-            "Idioma Origen": source_lang.upper(),
-            "Idioma Destino": target_lang.upper(),
-            "Total párrafos estructurados": total_segs,
-            "Citas bibliográficas in-text preservadas": "Sí ([1], [2], Autor-Año)",
-            "Fórmulas matemáticas protegidas": f"{forms_count} detectadas",
-            "Párrafos actualmente marcados para citación": len(st.session_state.marked_ids),
-        })
+        # Tarjeta de Estado Resumida
+        st.success(
+            f"✅ **Traducción Finalizada con Éxito** — "
+            f"`{active_fname}` ({source_lang.upper()} ➔ {target_lang.upper()}) · "
+            f"Citas bibliográficas in-text preservadas · "
+            f"{len(st.session_state.marked_ids)} extractos seleccionados para citación."
+        )
 
-        st.markdown("---")
-        st.markdown("##### 🧠 Registro Histórico de Agentes (Memoria del Pipeline)")
-        with st.container(height=260):
+        with st.expander("🔍 Ver Registro Técnico de Agentes (Opcional)"):
+            st.caption("Eventos registrados por los agentes durante el pipeline:")
             for log_entry in active_context.get("memory_log", []):
                 st.text(f"• {log_entry}")
 
@@ -684,7 +691,7 @@ if active_context and active_context.get("segments"):
     # --------------------------------------------------------------------------
     with tab_citations:
         if not marked_segs:
-            st.info("Aún no has marcado ningún párrafo. Puedes marcar párrafos en la pestaña de **Previsualización** o en el **Inspector** para generar tu informe de citación.")
+            st.info("Aún no has marcado ningún párrafo. Puedes marcar párrafos en la pestaña de **Previsualización** o en el **Inspector** para generar tu ficha de citación.")
         else:
             st.success(f"Has seleccionado **{len(marked_segs)} extractos** con trazabilidad de origen.")
 
@@ -692,7 +699,7 @@ if active_context and active_context.get("segments"):
 
             d_col1, d_col2 = st.columns([3, 1])
             with d_col1:
-                st.markdown("#### 📋 Ficha de Citas Generada (Formato Markdown)")
+                st.markdown("#### 📋 Ficha de Citas Generada")
             with d_col2:
                 st.download_button(
                     label="⬇️ Descargar Ficha (.TXT)",
@@ -705,20 +712,17 @@ if active_context and active_context.get("segments"):
             st.code(dossier_text, language="markdown")
 
     # --------------------------------------------------------------------------
-    # 4. Descargas Enriquecidas con Trazabilidad
+    # 4. Descargas Enriquecidas con Trazabilidad (Resumido y directo)
     # --------------------------------------------------------------------------
     st.markdown("---")
-    st.markdown("### 🌟 3. Descarga Enriquecida con Trazabilidad de Origen")
-    st.markdown(
-        "Descarga una versión especial del documento donde los párrafos marcados aparecen **resaltados "
-        "visualmente** e incluyen una **nota de procedencia exacta** al pie del párrafo."
-    )
+    st.markdown("### 🌟 3. Descarga Enriquecida con Citas y Procedencia")
+    st.caption("Descarga el documento con los párrafos marcados resaltados en amarillo y sus notas de origen al pie:")
 
     en_col1, en_col2 = st.columns(2)
     with en_col1:
         docx_enriched = export_segments(segments, "docx", enriched=True)
         st.download_button(
-            label=f"⬇️ Descargar .DOCX Enriquecido ({len(marked_segs)} citas marcadas)",
+            label=f"⬇️ Descargar .DOCX Enriquecido ({len(marked_segs)} citas)",
             data=docx_enriched,
             file_name=f"{active_fname.rsplit('.', 1)[0]}_enriquecido_trazabilidad.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -728,7 +732,7 @@ if active_context and active_context.get("segments"):
     with en_col2:
         pdf_enriched = export_segments(segments, "pdf", enriched=True)
         st.download_button(
-            label=f"⬇️ Descargar .PDF Enriquecido ({len(marked_segs)} citas marcadas)",
+            label=f"⬇️ Descargar .PDF Enriquecido ({len(marked_segs)} citas)",
             data=pdf_enriched,
             file_name=f"{active_fname.rsplit('.', 1)[0]}_enriquecido_trazabilidad.pdf",
             mime="application/pdf",
