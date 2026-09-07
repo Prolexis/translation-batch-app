@@ -65,105 +65,17 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# Inyección de estilos CSS avanzados
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+# Inicializar selector de tema independiente antes del renderizado
+if "theme_choice" not in st.session_state:
+    st.session_state["theme_choice"] = "light"
 
-    html, body, [class*="css"] {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-    }
+_active_theme = st.session_state.get("theme_choice", "light")
 
-    h1, h2, h3, h4, h5, h6 {
-        font-family: 'Outfit', sans-serif !important;
-        letter-spacing: -0.02em;
-    }
-
-    /* ==========================================================================
-       Sistema de Colores Dinámico: Soporte Universal Modo Claro y Modo Oscuro
-       ========================================================================== */
-    :root, .stApp, .stApp[data-test-theme-name="light"], [data-theme="light"] {
-        --paper-text: #0F172A;
-        --paper-subtext: #475569;
-        --paper-card-bg: #FFFFFF;
-        --paper-card-border: #CBD5E1;
-        --paper-sheet-bg: #FFFFFF;
-        --paper-sheet-border: #CBD5E1;
-        --paper-sheet-title: #0F172A;
-        --paper-sheet-subtitle: #475569;
-        --paper-sheet-abstract-bg: #F8FAFC;
-        --paper-sheet-abstract-border: #CBD5E1;
-        --paper-sheet-abstract-text: #1E293B;
-        --paper-sheet-abstract-label: #2563EB;
-        --paper-sheet-heading: #1D4ED8;
-        --hero-bg: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
-        --hero-border: #818CF8;
-        --hero-title-gradient: linear-gradient(135deg, #1E1B4B 0%, #3730A3 50%, #0369A1 100%);
-        --hero-text: #1E293B;
-        --hero-pill-bg: #FFFFFF;
-        --hero-pill-border: #C7D2FE;
-        --hero-pill-text: #312E81;
-        --citation-normal-color: #3730A3;
-        --citation-normal-bg: #EEF2FF;
-        --citation-normal-border: #818CF8;
-        --citation-marked-color: #1E1B4B;
-        --citation-marked-bg: #FDE047;
-        --citation-marked-border: #CA8A04;
-        --bilingual-normal-bg: #F8FAFC;
-        --bilingual-normal-border: #CBD5E1;
-        --bilingual-normal-text: #0F172A;
-        --marked-card-bg: #FEF9C3;
-        --marked-card-border: #CA8A04;
-        --marked-card-text: #713F12;
-        --marked-badge-bg: #FDE047;
-        --marked-badge-text: #713F12;
-        --marked-foot-text: #854D0E;
-    }
-
-    @media (prefers-color-scheme: dark) {
-        :root, .stApp {
-            --paper-text: #F8FAFC;
-            --paper-subtext: #94A3B8;
-            --paper-card-bg: rgba(30, 41, 59, 0.6);
-            --paper-card-border: #334155;
-            --paper-sheet-bg: #0B0F19;
-            --paper-sheet-border: #1E293B;
-            --paper-sheet-title: #F8FAFC;
-            --paper-sheet-subtitle: #94A3B8;
-            --paper-sheet-abstract-bg: rgba(30, 41, 59, 0.7);
-            --paper-sheet-abstract-border: #334155;
-            --paper-sheet-abstract-text: #CBD5E1;
-            --paper-sheet-abstract-label: #60A5FA;
-            --paper-sheet-heading: #93C5FD;
-            --hero-bg: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 41, 59, 0.82) 100%);
-            --hero-border: rgba(99, 102, 241, 0.35);
-            --hero-title-gradient: linear-gradient(135deg, #818CF8 0%, #C084FC 45%, #38BDF8 100%);
-            --hero-text: #CBD5E1;
-            --hero-pill-bg: rgba(255, 255, 255, 0.07);
-            --hero-pill-border: rgba(255, 255, 255, 0.15);
-            --hero-pill-text: #E2E8F0;
-            --citation-normal-color: #A5B4FC;
-            --citation-normal-bg: rgba(99, 102, 241, 0.22);
-            --citation-normal-border: rgba(99, 102, 241, 0.4);
-            --citation-marked-color: #1E1B4B;
-            --citation-marked-bg: #FDE047;
-            --citation-marked-border: #CA8A04;
-            --bilingual-normal-bg: rgba(255, 255, 255, 0.04);
-            --bilingual-normal-border: #6366F1;
-            --bilingual-normal-text: #E2E8F0;
-            --marked-card-bg: rgba(254, 240, 138, 0.18);
-            --marked-card-border: #F59E0B;
-            --marked-card-text: #FEF08A;
-            --marked-badge-bg: #FDE047;
-            --marked-badge-text: #1E1B4B;
-            --marked-foot-text: #FDE047;
-        }
-    }
-
-    .stApp[data-test-theme-name="dark"], [data-theme="dark"], [data-theme="Dark"] {
+if _active_theme == "dark":
+    _theme_vars = """
         --paper-text: #F8FAFC !important;
         --paper-subtext: #94A3B8 !important;
-        --paper-card-bg: rgba(30, 41, 59, 0.6) !important;
+        --paper-card-bg: rgba(30, 41, 59, 0.7) !important;
         --paper-card-border: #334155 !important;
         --paper-sheet-bg: #0B0F19 !important;
         --paper-sheet-border: #1E293B !important;
@@ -174,12 +86,12 @@ st.markdown("""
         --paper-sheet-abstract-text: #CBD5E1 !important;
         --paper-sheet-abstract-label: #60A5FA !important;
         --paper-sheet-heading: #93C5FD !important;
-        --hero-bg: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 41, 59, 0.82) 100%) !important;
-        --hero-border: rgba(99, 102, 241, 0.35) !important;
+        --hero-bg: linear-gradient(135deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.9) 100%) !important;
+        --hero-border: rgba(99, 102, 241, 0.4) !important;
         --hero-title-gradient: linear-gradient(135deg, #818CF8 0%, #C084FC 45%, #38BDF8 100%) !important;
         --hero-text: #CBD5E1 !important;
-        --hero-pill-bg: rgba(255, 255, 255, 0.07) !important;
-        --hero-pill-border: rgba(255, 255, 255, 0.15) !important;
+        --hero-pill-bg: rgba(255, 255, 255, 0.08) !important;
+        --hero-pill-border: rgba(255, 255, 255, 0.18) !important;
         --hero-pill-text: #E2E8F0 !important;
         --citation-normal-color: #A5B4FC !important;
         --citation-normal-bg: rgba(99, 102, 241, 0.22) !important;
@@ -196,9 +108,43 @@ st.markdown("""
         --marked-badge-bg: #FDE047 !important;
         --marked-badge-text: #1E1B4B !important;
         --marked-foot-text: #FDE047 !important;
-    }
-
-    .stApp[data-test-theme-name="light"], [data-theme="light"], [data-theme="Light"] {
+    """
+    _global_overrides = """
+        .stApp {
+            background-color: #0E1117 !important;
+            color: #F8FAFC !important;
+        }
+        header[data-testid="stHeader"] {
+            background-color: rgba(14, 17, 23, 0.95) !important;
+        }
+        section[data-testid="stSidebar"] {
+            background-color: #161B22 !important;
+            border-right: 1px solid #30363D !important;
+        }
+        section[data-testid="stSidebar"] * {
+            color: #F8FAFC !important;
+        }
+        div[data-testid="stExpander"] {
+            background-color: rgba(30, 41, 59, 0.5) !important;
+            border: 1px solid #334155 !important;
+        }
+        div[data-testid="stExpander"] summary {
+            color: #F8FAFC !important;
+        }
+        div[data-testid="stContainer"] {
+            border-color: #334155 !important;
+        }
+        textarea, input[type="text"] {
+            background-color: #161B22 !important;
+            color: #F8FAFC !important;
+            border-color: #334155 !important;
+        }
+        p, span, label, h1, h2, h3, h4, h5, h6 {
+            color: #F8FAFC;
+        }
+    """
+else:
+    _theme_vars = """
         --paper-text: #0F172A !important;
         --paper-subtext: #475569 !important;
         --paper-card-bg: #FFFFFF !important;
@@ -234,6 +180,65 @@ st.markdown("""
         --marked-badge-bg: #FDE047 !important;
         --marked-badge-text: #713F12 !important;
         --marked-foot-text: #854D0E !important;
+    """
+    _global_overrides = """
+        .stApp {
+            background-color: #FFFFFF !important;
+            color: #0F172A !important;
+        }
+        header[data-testid="stHeader"] {
+            background-color: rgba(255, 255, 255, 0.95) !important;
+        }
+        section[data-testid="stSidebar"] {
+            background-color: #F8FAFC !important;
+            border-right: 1px solid #E2E8F0 !important;
+        }
+        section[data-testid="stSidebar"] * {
+            color: #0F172A !important;
+        }
+        div[data-testid="stExpander"] {
+            background-color: #FFFFFF !important;
+            border: 1px solid #CBD5E1 !important;
+        }
+        div[data-testid="stExpander"] summary {
+            color: #0F172A !important;
+        }
+        div[data-testid="stContainer"] {
+            border-color: #CBD5E1 !important;
+        }
+        textarea, input[type="text"] {
+            background-color: #FFFFFF !important;
+            color: #0F172A !important;
+            border-color: #CBD5E1 !important;
+        }
+        p, span, label, h1, h2, h3, h4, h5, h6 {
+            color: #0F172A;
+        }
+    """
+
+# 1. Inyección de variables CSS dinámicas de Tema
+st.markdown(f"""
+<style>
+    :root, .stApp {{
+        {_theme_vars}
+    }}
+
+    {_global_overrides}
+</style>
+""", unsafe_allow_html=True)
+
+# 2. Inyección de estilos de componentes y tipografía (CSS estático)
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+        font-family: 'Outfit', sans-serif !important;
+        letter-spacing: -0.02em;
     }
 
     /* Hero Glassmorphic Card */
@@ -515,6 +520,21 @@ init_session_state()
 # Barra Lateral
 # ------------------------------------------------------------------------------
 with st.sidebar:
+    st.markdown("### 🌓 Modo de Pantalla")
+    curr_th = st.session_state.get("theme_choice", "light")
+    btn_th_c1, btn_th_c2 = st.columns(2)
+    with btn_th_c1:
+        if st.button("☀️ Claro", key="btn_side_theme_light", use_container_width=True, type="primary" if curr_th == "light" else "secondary"):
+            if curr_th != "light":
+                st.session_state.theme_choice = "light"
+                st.rerun()
+    with btn_th_c2:
+        if st.button("🌙 Oscuro", key="btn_side_theme_dark", use_container_width=True, type="primary" if curr_th == "dark" else "secondary"):
+            if curr_th != "dark":
+                st.session_state.theme_choice = "dark"
+                st.rerun()
+
+    st.markdown("---")
     st.markdown("### ⚙️ Configuración del Traductor")
 
     env_api_key = settings.GEMINI_API_KEY.strip()
@@ -602,8 +622,20 @@ with st.sidebar:
                 st.error("No se encontró el archivo de muestra DOCX.")
 
 # ------------------------------------------------------------------------------
-# Encabezado Principal (Hero)
+# Encabezado Principal (Hero) con Selector Rápido de Tema
 # ------------------------------------------------------------------------------
+top_bar_col1, top_bar_col2 = st.columns([8, 2])
+with top_bar_col2:
+    active_th = st.session_state.get("theme_choice", "light")
+    if active_th == "light":
+        if st.button("🌙 Modo Oscuro", key="main_top_theme_btn", use_container_width=True, help="Haz clic para activar el Modo Oscuro"):
+            st.session_state.theme_choice = "dark"
+            st.rerun()
+    else:
+        if st.button("☀️ Modo Claro", key="main_top_theme_btn", use_container_width=True, help="Haz clic para activar el Modo Claro"):
+            st.session_state.theme_choice = "light"
+            st.rerun()
+
 st.markdown("""
 <div class="hero-banner">
     <div class="hero-title">🎓 Traductor de Papers Científicos con Formato Académico</div>
