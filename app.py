@@ -247,22 +247,24 @@ with st.sidebar:
             format_func=lambda x: {"es": "🇪🇸 Español", "en": "🇬🇧 Inglés", "fr": "🇫🇷 Francés", "pt": "🇵🇹 Portugués"}.get(x, x),
         )
 
-    alignment_mode = st.selectbox(
-        "Alineación",
-        options=["position", "semantic"],
-        index=0,
-        format_func=lambda x: "Rápida por posición" if x == "position" else "Semántica (Embeddings)",
-    )
+    with st.expander("⚙️ Opciones Avanzadas (Opcional)"):
+        alignment_mode = st.selectbox(
+            "Método de Alineación",
+            options=["position", "semantic"],
+            index=0,
+            format_func=lambda x: "Rápida por posición (Recomendada)" if x == "position" else "Semántica (Embeddings)",
+            help="Determina el algoritmo de correspondencia entre párrafos originales y traducidos.",
+        )
 
     st.markdown("---")
-    st.markdown("#### 🧪 Paper de Prueba (5+ Páginas)")
-    st.caption("Carga con 1 clic el paper científico de muestra con 5 páginas, citas [1] y fórmulas:")
+    st.markdown("#### 🧪 Paper de Prueba")
+    st.caption("Prueba el sistema con 1 clic usando un paper de muestra con citas [1] y fórmulas:")
 
     sample_col1, sample_col2 = st.columns(2)
     sample_dir = os.path.join(os.path.dirname(__file__), "sample_files")
 
     with sample_col1:
-        if st.button("📄 Probar PDF (5 págs)", use_container_width=True):
+        if st.button("📄 Probar PDF", use_container_width=True):
             pdf_path = os.path.join(sample_dir, "academic_paper_sample.pdf")
             if os.path.exists(pdf_path):
                 with open(pdf_path, "rb") as f:
@@ -276,7 +278,7 @@ with st.sidebar:
                 st.error("No se encontró el archivo de muestra PDF.")
 
     with sample_col2:
-        if st.button("📝 Probar DOCX (5 págs)", use_container_width=True):
+        if st.button("📝 Probar DOCX", use_container_width=True):
             docx_path = os.path.join(sample_dir, "academic_paper_sample.docx")
             if os.path.exists(docx_path):
                 with open(docx_path, "rb") as f:
@@ -289,31 +291,19 @@ with st.sidebar:
             else:
                 st.error("No se encontró el archivo de muestra DOCX.")
 
-    st.markdown("---")
-    st.markdown("#### 📖 Documentación de Arquitectura")
-    with st.expander("ℹ️ Ver Ciclo de Vida de Trazabilidad"):
-        doc_path = os.path.join(os.path.dirname(__file__), "docs", "trazabilidad_explicacion.md")
-        if os.path.exists(doc_path):
-            with open(doc_path, "r", encoding="utf-8") as f:
-                st.markdown(f.read())
-
 # ------------------------------------------------------------------------------
 # Encabezado Principal (Hero)
 # ------------------------------------------------------------------------------
 st.markdown("""
 <div class="hero-banner">
-    <div class="hero-title">🎓 Traductor de Papers Académicos con Trazabilidad y Marcado de Origen</div>
-    <div style="color: #CBD5E1; font-size: 1.02rem; line-height: 1.55;">
-        Sube un artículo o paper científico en inglés (<strong>PDF, DOCX o TXT</strong>) y el sistema lo traducirá 
-        completamente al español mediante agentes coordinados con la API de <strong>Gemini 3.1 Flash-Lite</strong>.
-        Descarga de inmediato la traducción completa o selecciona cualquier párrafo para auditar su 
-        <strong>sección, página y número de párrafo exacto</strong> en el documento original.
+    <div class="hero-title">🎓 Traductor de Papers Científicos con Formato Académico</div>
+    <div style="color: #E2E8F0; font-size: 1.05rem; line-height: 1.6; margin-bottom: 14px;">
+        Traduce tus papers y artículos científicos en inglés (<strong>PDF, Word o TXT</strong>) al español conservando su formato original de <strong>dos columnas, fórmulas y citas bibliográficas</strong> con trazabilidad exacta de procedencia.
     </div>
     <div class="agent-pipeline">
-        <span class="agent-pill">📄 1. Extractor Estructurado (Páginas y Secciones)</span>
-        <span class="agent-pill">🌐 2. Traductor Académico en Paralelo (Citas [1] y Fórmulas)</span>
-        <span class="agent-pill">🛡️ 3. Validador de Calidad</span>
-        <span class="agent-pill">🔗 4. Trazabilidad de Origen y Previsualización</span>
+        <span class="agent-pill">1️⃣ Sube tu paper en inglés</span>
+        <span class="agent-pill">2️⃣ Revisa la previsualización y descarga en PDF o Word</span>
+        <span class="agent-pill">3️⃣ Marca párrafos para tus citas y tesis</span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -542,12 +532,12 @@ if active_context and active_context.get("segments"):
         if p_idx is not None:
             st.session_state.selected_paragraph_idx = p_idx
 
-    # Pestañas con títulos estáticos para evitar que React desmonte el árbol al marcar
+    # Pestañas claras y ordenadas
     tab_preview, tab_inspector, tab_reports, tab_citations = st.tabs([
-        "📖 Previsualización del Paper Traducido",
-        "🔬 Inspector de Procedencia y Edición",
-        "📊 Reporte Ejecutivo de Traducción",
-        "📚 Canasta de Citas Seleccionadas",
+        "📖 1. Leer y Marcar Párrafos",
+        "🔬 2. Inspector Detallado (Bilingüe)",
+        "📊 3. Resumen y Estadísticas",
+        "📋 4. Mis Citas Seleccionadas",
     ])
 
     # --------------------------------------------------------------------------
@@ -816,7 +806,10 @@ if active_context and active_context.get("segments"):
     # --------------------------------------------------------------------------
     st.markdown("---")
     st.markdown("### 🌟 3. Descarga Enriquecida con Citas y Procedencia")
-    st.caption("Descarga el documento con los párrafos marcados resaltados en amarillo y sus notas de origen al pie:")
+    st.caption("Descarga una versión especial del documento con los párrafos que seleccionaste resaltados en amarillo y con su procedencia al pie:")
+
+    if not marked_segs:
+        st.info("💡 **Consejo:** Si deseas descargar el paper con citas resaltadas en amarillo y su nota de procedencia exacta, selecciona los párrafos que desees en la pestaña **'1. Leer y Marcar Párrafos'**.")
 
     en_col1, en_col2 = st.columns(2)
     with en_col1:

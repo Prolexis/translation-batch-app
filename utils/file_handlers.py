@@ -614,6 +614,24 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
     return buf.getvalue()
 
 
+def _clean_pdf_text(text: str) -> str:
+    """Sanitiza caracteres tipográficos especiales para compatibilidad con fuentes estándar de ReportLab."""
+    if not text:
+        return ""
+    replacements = {
+        "\u2018": "'", "\u2019": "'",
+        "\u201c": '"', "\u201d": '"',
+        "\u2013": " - ", "\u2014": " — ",
+        "\u2026": "...",
+        "\xa0": " ",
+        "\u2264": "<=", "\u2265": ">=",
+        "\u2260": "!=", "\u00d7": "x",
+    }
+    for k, v in replacements.items():
+        text = text.replace(k, v)
+    return text.strip()
+
+
 def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     """
     Exporta a .PDF en formato académico de DOS COLUMNAS (estilo IEEE / revista científica):
@@ -644,15 +662,15 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
 
     title_text = ""
     if title_segs:
-        title_text = title_segs[0].translated or title_segs[0].original
+        title_text = _clean_pdf_text(title_segs[0].translated or title_segs[0].original)
     elif segments:
-        title_text = segments[0].translated or segments[0].original
+        title_text = _clean_pdf_text(segments[0].translated or segments[0].original)
         if segments[0] in body_segs:
             body_segs.remove(segments[0])
 
     abstract_text = ""
     if abstract_segs:
-        abstract_text = " ".join((s.translated or s.original) for s in abstract_segs)
+        abstract_text = _clean_pdf_text(" ".join((s.translated or s.original) for s in abstract_segs))
 
     # --------------------------------------------------------------------------
     # PÁGINA 1: Encabezado superior, Título y Caja de Abstract
