@@ -105,21 +105,23 @@ _MATH_FORMULA_REGEX = re.compile(
 
 
 def highlight_citations_html(text: str, is_marked: bool = False) -> str:
-    """Resalta visualmente con color las citas in-text [1] y autor-año (Author, Year)."""
+    """Resalta visualmente con color las citas in-text [1] y autor-año (Author, Year) adaptables a modo claro y oscuro."""
     if not text:
         return ""
     import html as _html
     safe = _html.escape(text)
 
     if is_marked:
-        # En párrafo marcado (fondo amarillo): badge azul índigo profundo de alto contraste
-        badge_style = "color: #1E1B4B; background: #FDE047; font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid #CA8A04;"
+        # En párrafo marcado (fondo amarillo): texto oscuro de alto contraste
+        badge_style = "color: var(--citation-marked-color, #1E1B4B); background: var(--citation-marked-bg, #FDE047); font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--citation-marked-border, #CA8A04);"
+        badge_class = "academic-citation-marked"
     else:
-        # En párrafo normal: pastilla azul/índigo moderna con borde suave
-        badge_style = "color: #818CF8; background: rgba(99, 102, 241, 0.18); font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(99, 102, 241, 0.35);"
+        # En párrafo normal: pastilla con variables CSS adaptables a tema claro y oscuro
+        badge_style = "color: var(--citation-normal-color, #3730A3); background: var(--citation-normal-bg, #EEF2FF); font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--citation-normal-border, #818CF8);"
+        badge_class = "academic-citation"
 
     def _rep(m):
-        return f'<span style="{badge_style}">{m.group(0)}</span>'
+        return f'<span class="{badge_class}" style="{badge_style}">{m.group(0)}</span>'
 
     # 1. Citas entre corchetes [1], [2, 3], [4-6]
     safe = re.sub(r"\[\s*\d+(?:[\s,\-–—]+\d+)*\s*\]", _rep, safe)

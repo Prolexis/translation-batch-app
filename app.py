@@ -64,24 +64,193 @@ st.markdown("""
         letter-spacing: -0.02em;
     }
 
+    /* ==========================================================================
+       Sistema de Colores Dinámico: Soporte Universal Modo Claro y Modo Oscuro
+       ========================================================================== */
+    :root, .stApp, .stApp[data-test-theme-name="light"], [data-theme="light"] {
+        --paper-text: #0F172A;
+        --paper-subtext: #475569;
+        --paper-card-bg: #FFFFFF;
+        --paper-card-border: #CBD5E1;
+        --paper-sheet-bg: #FFFFFF;
+        --paper-sheet-border: #CBD5E1;
+        --paper-sheet-title: #0F172A;
+        --paper-sheet-subtitle: #475569;
+        --paper-sheet-abstract-bg: #F8FAFC;
+        --paper-sheet-abstract-border: #CBD5E1;
+        --paper-sheet-abstract-text: #1E293B;
+        --paper-sheet-abstract-label: #2563EB;
+        --paper-sheet-heading: #1D4ED8;
+        --hero-bg: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%);
+        --hero-border: #818CF8;
+        --hero-title-gradient: linear-gradient(135deg, #1E1B4B 0%, #3730A3 50%, #0369A1 100%);
+        --hero-text: #1E293B;
+        --hero-pill-bg: #FFFFFF;
+        --hero-pill-border: #C7D2FE;
+        --hero-pill-text: #312E81;
+        --citation-normal-color: #3730A3;
+        --citation-normal-bg: #EEF2FF;
+        --citation-normal-border: #818CF8;
+        --citation-marked-color: #1E1B4B;
+        --citation-marked-bg: #FDE047;
+        --citation-marked-border: #CA8A04;
+        --bilingual-normal-bg: #F8FAFC;
+        --bilingual-normal-border: #CBD5E1;
+        --bilingual-normal-text: #0F172A;
+        --marked-card-bg: #FEF9C3;
+        --marked-card-border: #CA8A04;
+        --marked-card-text: #713F12;
+        --marked-badge-bg: #FDE047;
+        --marked-badge-text: #713F12;
+        --marked-foot-text: #854D0E;
+    }
+
+    @media (prefers-color-scheme: dark) {
+        :root, .stApp {
+            --paper-text: #F8FAFC;
+            --paper-subtext: #94A3B8;
+            --paper-card-bg: rgba(30, 41, 59, 0.6);
+            --paper-card-border: #334155;
+            --paper-sheet-bg: #0B0F19;
+            --paper-sheet-border: #1E293B;
+            --paper-sheet-title: #F8FAFC;
+            --paper-sheet-subtitle: #94A3B8;
+            --paper-sheet-abstract-bg: rgba(30, 41, 59, 0.7);
+            --paper-sheet-abstract-border: #334155;
+            --paper-sheet-abstract-text: #CBD5E1;
+            --paper-sheet-abstract-label: #60A5FA;
+            --paper-sheet-heading: #93C5FD;
+            --hero-bg: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 41, 59, 0.82) 100%);
+            --hero-border: rgba(99, 102, 241, 0.35);
+            --hero-title-gradient: linear-gradient(135deg, #818CF8 0%, #C084FC 45%, #38BDF8 100%);
+            --hero-text: #CBD5E1;
+            --hero-pill-bg: rgba(255, 255, 255, 0.07);
+            --hero-pill-border: rgba(255, 255, 255, 0.15);
+            --hero-pill-text: #E2E8F0;
+            --citation-normal-color: #A5B4FC;
+            --citation-normal-bg: rgba(99, 102, 241, 0.22);
+            --citation-normal-border: rgba(99, 102, 241, 0.4);
+            --citation-marked-color: #1E1B4B;
+            --citation-marked-bg: #FDE047;
+            --citation-marked-border: #CA8A04;
+            --bilingual-normal-bg: rgba(255, 255, 255, 0.04);
+            --bilingual-normal-border: #6366F1;
+            --bilingual-normal-text: #E2E8F0;
+            --marked-card-bg: rgba(254, 240, 138, 0.18);
+            --marked-card-border: #F59E0B;
+            --marked-card-text: #FEF08A;
+            --marked-badge-bg: #FDE047;
+            --marked-badge-text: #1E1B4B;
+            --marked-foot-text: #FDE047;
+        }
+    }
+
+    .stApp[data-test-theme-name="dark"], [data-theme="dark"], [data-theme="Dark"] {
+        --paper-text: #F8FAFC !important;
+        --paper-subtext: #94A3B8 !important;
+        --paper-card-bg: rgba(30, 41, 59, 0.6) !important;
+        --paper-card-border: #334155 !important;
+        --paper-sheet-bg: #0B0F19 !important;
+        --paper-sheet-border: #1E293B !important;
+        --paper-sheet-title: #F8FAFC !important;
+        --paper-sheet-subtitle: #94A3B8 !important;
+        --paper-sheet-abstract-bg: rgba(30, 41, 59, 0.7) !important;
+        --paper-sheet-abstract-border: #334155 !important;
+        --paper-sheet-abstract-text: #CBD5E1 !important;
+        --paper-sheet-abstract-label: #60A5FA !important;
+        --paper-sheet-heading: #93C5FD !important;
+        --hero-bg: linear-gradient(135deg, rgba(15, 23, 42, 0.92) 0%, rgba(30, 41, 59, 0.82) 100%) !important;
+        --hero-border: rgba(99, 102, 241, 0.35) !important;
+        --hero-title-gradient: linear-gradient(135deg, #818CF8 0%, #C084FC 45%, #38BDF8 100%) !important;
+        --hero-text: #CBD5E1 !important;
+        --hero-pill-bg: rgba(255, 255, 255, 0.07) !important;
+        --hero-pill-border: rgba(255, 255, 255, 0.15) !important;
+        --hero-pill-text: #E2E8F0 !important;
+        --citation-normal-color: #A5B4FC !important;
+        --citation-normal-bg: rgba(99, 102, 241, 0.22) !important;
+        --citation-normal-border: rgba(99, 102, 241, 0.4) !important;
+        --citation-marked-color: #1E1B4B !important;
+        --citation-marked-bg: #FDE047 !important;
+        --citation-marked-border: #CA8A04 !important;
+        --bilingual-normal-bg: rgba(255, 255, 255, 0.04) !important;
+        --bilingual-normal-border: #6366F1 !important;
+        --bilingual-normal-text: #E2E8F0 !important;
+        --marked-card-bg: rgba(254, 240, 138, 0.18) !important;
+        --marked-card-border: #F59E0B !important;
+        --marked-card-text: #FEF08A !important;
+        --marked-badge-bg: #FDE047 !important;
+        --marked-badge-text: #1E1B4B !important;
+        --marked-foot-text: #FDE047 !important;
+    }
+
+    .stApp[data-test-theme-name="light"], [data-theme="light"], [data-theme="Light"] {
+        --paper-text: #0F172A !important;
+        --paper-subtext: #475569 !important;
+        --paper-card-bg: #FFFFFF !important;
+        --paper-card-border: #CBD5E1 !important;
+        --paper-sheet-bg: #FFFFFF !important;
+        --paper-sheet-border: #CBD5E1 !important;
+        --paper-sheet-title: #0F172A !important;
+        --paper-sheet-subtitle: #475569 !important;
+        --paper-sheet-abstract-bg: #F8FAFC !important;
+        --paper-sheet-abstract-border: #CBD5E1 !important;
+        --paper-sheet-abstract-text: #1E293B !important;
+        --paper-sheet-abstract-label: #2563EB !important;
+        --paper-sheet-heading: #1D4ED8 !important;
+        --hero-bg: linear-gradient(135deg, #EEF2FF 0%, #E0E7FF 100%) !important;
+        --hero-border: #818CF8 !important;
+        --hero-title-gradient: linear-gradient(135deg, #1E1B4B 0%, #3730A3 50%, #0369A1 100%) !important;
+        --hero-text: #1E293B !important;
+        --hero-pill-bg: #FFFFFF !important;
+        --hero-pill-border: #C7D2FE !important;
+        --hero-pill-text: #312E81 !important;
+        --citation-normal-color: #3730A3 !important;
+        --citation-normal-bg: #EEF2FF !important;
+        --citation-normal-border: #818CF8 !important;
+        --citation-marked-color: #1E1B4B !important;
+        --citation-marked-bg: #FDE047 !important;
+        --citation-marked-border: #CA8A04 !important;
+        --bilingual-normal-bg: #F8FAFC !important;
+        --bilingual-normal-border: #CBD5E1 !important;
+        --bilingual-normal-text: #0F172A !important;
+        --marked-card-bg: #FEF9C3 !important;
+        --marked-card-border: #CA8A04 !important;
+        --marked-card-text: #713F12 !important;
+        --marked-badge-bg: #FDE047 !important;
+        --marked-badge-text: #713F12 !important;
+        --marked-foot-text: #854D0E !important;
+    }
+
     /* Hero Glassmorphic Card */
     .hero-banner {
-        background: linear-gradient(135deg, rgba(15, 23, 42, 0.88) 0%, rgba(30, 41, 59, 0.78) 100%);
-        border: 1px solid rgba(99, 102, 241, 0.35);
+        background: var(--hero-bg);
+        border: 1px solid var(--hero-border);
         border-radius: 18px;
         padding: 26px 32px;
         margin-bottom: 24px;
-        box-shadow: 0 12px 36px 0 rgba(0, 0, 0, 0.38);
-        backdrop-filter: blur(14px);
+        box-shadow: 0 10px 30px 0 rgba(0, 0, 0, 0.08);
     }
 
     .hero-title {
         font-size: 2.25rem;
         font-weight: 800;
-        background: linear-gradient(135deg, #818CF8 0%, #C084FC 45%, #38BDF8 100%);
+        background: var(--hero-title-gradient);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         margin-bottom: 8px;
+    }
+
+    .hero-desc {
+        color: var(--hero-text);
+        font-size: 1.05rem;
+        line-height: 1.6;
+        margin-bottom: 14px;
+        font-weight: 500;
+    }
+
+    .hero-desc strong {
+        color: var(--hero-pill-text);
+        font-weight: 700;
     }
 
     .agent-pipeline {
@@ -96,92 +265,218 @@ st.markdown("""
         align-items: center;
         gap: 6px;
         padding: 6px 14px;
-        background: rgba(255, 255, 255, 0.06);
-        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: var(--hero-pill-bg);
+        border: 1px solid var(--hero-pill-border);
         border-radius: 30px;
         font-size: 0.82rem;
         font-weight: 600;
-        color: #E2E8F0;
-        transition: all 0.2s ease;
+        color: var(--hero-pill-text);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.06);
     }
 
-    /* Provenance Box Standard */
-    .provenance-card {
-        background: linear-gradient(135deg, #1E1B4B 0%, #312E81 100%);
-        border: 1px solid #6366F1;
-        border-left: 6px solid #818CF8;
+    /* Previsualización: Hoja de Paper Científico */
+    .paper-sheet-container {
+        background: var(--paper-sheet-bg);
+        border: 1px solid var(--paper-sheet-border);
         border-radius: 12px;
-        padding: 16px 20px;
-        margin: 12px 0;
-        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
+        padding: 28px 36px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.15);
+        max-height: 600px;
+        overflow-y: auto;
     }
 
-    /* Provenance Box Marked (Glowing Amber) */
-    .provenance-card-marked {
-        background: linear-gradient(135deg, rgba(120, 53, 15, 0.45) 0%, rgba(69, 26, 3, 0.75) 100%);
-        border: 2px solid #F59E0B;
-        border-left: 8px solid #FACC15;
-        border-radius: 12px;
-        padding: 18px 22px;
-        margin: 12px 0;
-        box-shadow: 0 8px 24px rgba(245, 158, 11, 0.28);
-    }
-
-    .provenance-title {
-        font-size: 0.82rem;
+    .paper-sheet-header {
+        text-align: center;
+        font-size: 0.75rem;
+        letter-spacing: 1.5px;
+        color: var(--paper-subtext);
+        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #A5B4FC;
+        margin-bottom: 12px;
+        border-bottom: 1px solid var(--paper-sheet-border);
+        padding-bottom: 8px;
+    }
+
+    .paper-sheet-title {
+        text-align: center;
+        color: var(--paper-sheet-title);
+        font-size: 1.45rem;
+        font-weight: 800;
+        line-height: 1.35;
+        margin: 16px 0 8px 0;
+    }
+
+    .paper-sheet-subtitle {
+        text-align: center;
+        color: var(--paper-sheet-subtitle);
+        font-size: 0.85rem;
+        margin-bottom: 20px;
+    }
+
+    .paper-sheet-abstract {
+        background: var(--paper-sheet-abstract-bg);
+        border: 1px solid var(--paper-sheet-abstract-border);
+        border-radius: 8px;
+        padding: 14px 18px;
+        margin-bottom: 24px;
+    }
+
+    .paper-sheet-abstract-label {
+        color: var(--paper-sheet-abstract-label);
+        font-size: 0.88rem;
+        letter-spacing: 0.5px;
         font-weight: 700;
+    }
+
+    .paper-sheet-abstract-text {
+        font-style: italic;
+        color: var(--paper-sheet-abstract-text);
+        font-size: 0.90rem;
+        line-height: 1.6;
+    }
+
+    .paper-sheet-body-wrap {
+        border-top: 1px solid var(--paper-sheet-border);
+        padding-top: 16px;
+    }
+
+    .paper-sheet-heading {
+        color: var(--paper-sheet-heading);
+        margin-top: 16px;
+        margin-bottom: 6px;
+        font-size: 1.05rem;
+        text-transform: uppercase;
+        font-weight: 700;
+    }
+
+    .paper-sheet-ref {
+        font-size: 0.78rem;
+        color: var(--paper-subtext);
         margin-bottom: 4px;
+        padding-left: 14px;
+        text-indent: -14px;
+        line-height: 1.5;
     }
 
-    .provenance-body {
-        font-size: 1.15rem;
-        font-weight: 700;
-        color: #FFFFFF;
-    }
-
-    /* Marked paragraph card */
-    .paragraph-marked {
-        background: rgba(254, 240, 138, 0.16) !important;
-        border: 2px solid #FACC15 !important;
-        border-radius: 10px;
-        padding: 14px 18px;
+    .paper-sheet-p {
+        color: var(--paper-text);
+        font-size: 0.90rem;
+        line-height: 1.65;
         margin-bottom: 12px;
-        box-shadow: 0 4px 14px rgba(250, 204, 21, 0.18);
-        transition: all 0.2s ease;
     }
 
-    .paragraph-normal {
-        background: rgba(30, 41, 59, 0.4);
-        border: 1px solid rgba(255, 255, 255, 0.08);
-        border-radius: 10px;
-        padding: 14px 18px;
+    .paper-sheet-p-marked {
+        color: var(--marked-card-text);
+        background: var(--marked-card-bg);
+        border-left: 3px solid var(--marked-card-border);
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 0.90rem;
+        line-height: 1.65;
         margin-bottom: 12px;
-        transition: all 0.2s ease;
+        font-weight: 500;
     }
 
-    .citation-badge {
-        display: inline-block;
-        padding: 3px 8px;
-        border-radius: 6px;
+    .paper-sheet-more {
+        text-align: center;
+        color: var(--paper-subtext);
+        font-size: 0.82rem;
+        margin-top: 16px;
+    }
+
+    /* Párrafos en Lienzo de Lectura */
+    .preview-p-normal-badge {
+        color: var(--paper-subtext);
         font-size: 0.75rem;
         font-weight: 600;
-        background: #4F46E5;
-        color: #FFFFFF;
         margin-bottom: 6px;
     }
 
-    .citation-badge-marked {
-        display: inline-block;
-        padding: 4px 10px;
-        border-radius: 6px;
-        font-size: 0.78rem;
+    .preview-p-marked-badge {
+        background: var(--marked-badge-bg);
+        color: var(--marked-badge-text);
         font-weight: 800;
-        background: #F59E0B;
-        color: #000000;
-        margin-bottom: 6px;
+        font-size: 0.75rem;
+        padding: 3px 8px;
+        border-radius: 4px;
+        display: inline-block;
+        margin-bottom: 8px;
+    }
+
+    .paper-paragraph-normal {
+        font-size: 0.98rem;
+        line-height: 1.65;
+        color: var(--paper-text);
+    }
+
+    .paper-paragraph-marked {
+        font-size: 1.02rem;
+        line-height: 1.65;
+        color: var(--marked-card-text);
+        font-weight: 500;
+    }
+
+    .preview-p-foot-marked {
+        margin-top: 8px;
+        font-size: 0.82rem;
+        color: var(--marked-foot-text);
+        font-weight: 600;
+        font-style: italic;
+    }
+
+    /* Vista Bilingüe Sincronizada */
+    .bilingual-card-normal-left {
+        background: var(--bilingual-normal-bg);
+        color: var(--bilingual-normal-text);
+        padding: 10px 14px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        font-size: 0.92rem;
+        line-height: 1.6;
+        border: 1px solid var(--paper-sheet-border);
+        border-left: 4px solid #6366F1;
+    }
+
+    .bilingual-card-normal-right {
+        background: var(--bilingual-normal-bg);
+        color: var(--bilingual-normal-text);
+        padding: 10px 14px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        font-size: 0.92rem;
+        line-height: 1.6;
+        border: 1px solid var(--paper-sheet-border);
+        border-left: 4px solid #10B981;
+    }
+
+    .bilingual-card-marked {
+        background: var(--marked-card-bg);
+        color: var(--marked-card-text);
+        padding: 10px 14px;
+        border-radius: 8px;
+        margin-bottom: 10px;
+        font-size: 0.92rem;
+        line-height: 1.6;
+        border: 1px solid var(--marked-card-border);
+        border-left: 4px solid var(--marked-card-border);
+        font-weight: 500;
+    }
+
+    .bilingual-prov-label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        opacity: 0.85;
+    }
+
+    .inspector-marked-banner {
+        background: var(--marked-badge-bg);
+        color: var(--marked-badge-text);
+        font-weight: 800;
+        font-size: 0.80rem;
+        padding: 4px 10px;
+        border-radius: 4px;
+        display: inline-block;
+        margin-bottom: 8px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -297,7 +592,7 @@ with st.sidebar:
 st.markdown("""
 <div class="hero-banner">
     <div class="hero-title">🎓 Traductor de Papers Científicos con Formato Académico</div>
-    <div style="color: #E2E8F0; font-size: 1.05rem; line-height: 1.6; margin-bottom: 14px;">
+    <div class="hero-desc">
         Traduce tus papers y artículos científicos en inglés (<strong>PDF, Word o TXT</strong>) al español conservando su formato original de <strong>dos columnas, fórmulas y citas bibliográficas</strong> con trazabilidad exacta de procedencia.
     </div>
     <div class="agent-pipeline">
@@ -467,48 +762,49 @@ if active_context and active_context.get("segments"):
             pdf_embed_html = (
                 f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1&navpanes=0" '
                 f'width="100%" height="680px" '
-                f'style="border-radius:10px; border:1px solid rgba(255,255,255,0.15); box-shadow: 0 10px 30px rgba(0,0,0,0.35); background:#1E293B;">'
+                f'style="border-radius:10px; border:1px solid var(--paper-sheet-border); box-shadow: 0 10px 30px rgba(0,0,0,0.15); background:var(--paper-sheet-bg);">'
                 f'</iframe>'
             )
             st.markdown(pdf_embed_html, unsafe_allow_html=True)
         else:
-            # Hoja de Paper Científico (Simulador de Paper Real en HTML/CSS)
+            # Hoja de Paper Científico (Simulador de Paper Real en HTML/CSS adaptable)
             st.caption("Previsualización estructurada con título, abstract enmarcado y citas resaltadas con color:")
 
             title_txt = next((s.translated or s.original for s in segments if s.element_type == "title"), segments[0].translated or segments[0].original)
             abstract_txt = " ".join(s.translated or s.original for s in segments if s.element_type == "abstract" or s.section.lower() in ["abstract", "resumen"])
 
             paper_sheet_html = [
-                '<div style="background: #0B0F19; border: 1px solid #1E293B; border-radius: 12px; padding: 28px 36px; box-shadow: 0 15px 35px rgba(0,0,0,0.4); max-height: 600px; overflow-y: auto;">',
-                '<div style="text-align: center; font-size: 0.75rem; letter-spacing: 1.5px; color: #64748B; font-weight: 700; text-transform: uppercase; margin-bottom: 12px; border-bottom: 1px solid #1E293B; padding-bottom: 8px;">REVISTA CIENTÍFICA · TRADUCCIÓN ACADÉMICA IEEE</div>',
-                f'<h2 style="text-align: center; color: #F8FAFC; font-size: 1.45rem; font-weight: 800; line-height: 1.35; margin: 16px 0 8px 0;">{html.escape(title_txt)}</h2>',
-                '<div style="text-align: center; color: #94A3B8; font-size: 0.85rem; margin-bottom: 20px;">Artículo Académico Traducido con Preservación de Citas Bibliográficas y Trazabilidad</div>',
+                '<div class="paper-sheet-container">',
+                '<div class="paper-sheet-header">REVISTA CIENTÍFICA · TRADUCCIÓN ACADÉMICA IEEE</div>',
+                f'<h2 class="paper-sheet-title">{html.escape(title_txt)}</h2>',
+                '<div class="paper-sheet-subtitle">Artículo Académico Traducido con Preservación de Citas Bibliográficas y Trazabilidad</div>',
             ]
 
             if abstract_txt:
                 clean_abs = re.sub(r"^(?:abstract|resumen)\s*[\:\—\-\.]*\s*", "", abstract_txt, flags=re.I)
                 abs_colored = highlight_citations_html(clean_abs, is_marked=False)
                 paper_sheet_html.append(
-                    f'<div style="background: rgba(30, 41, 59, 0.7); border: 1px solid #334155; border-radius: 8px; padding: 14px 18px; margin-bottom: 24px;">'
-                    f'<strong style="color: #60A5FA; font-size: 0.88rem; letter-spacing: 0.5px;">RESUMEN — </strong>'
-                    f'<span style="font-style: italic; color: #CBD5E1; font-size: 0.90rem; line-height: 1.6;">{abs_colored}</span>'
+                    f'<div class="paper-sheet-abstract">'
+                    f'<strong class="paper-sheet-abstract-label">RESUMEN — </strong>'
+                    f'<span class="paper-sheet-abstract-text">{abs_colored}</span>'
                     f'</div>'
                 )
 
-            paper_sheet_html.append('<div style="border-top: 1px solid #1E293B; padding-top: 16px;">')
+            paper_sheet_html.append('<div class="paper-sheet-body-wrap">')
             for s in segments[:18]:
                 if s.element_type in ["title", "abstract"] or s.section.lower() in ["abstract", "resumen"]:
                     continue
                 if s.element_type == "heading":
-                    paper_sheet_html.append(f'<h4 style="color: #93C5FD; margin-top: 16px; margin-bottom: 6px; font-size: 1.05rem; text-transform: uppercase;">{html.escape(s.translated or s.original)}</h4>')
+                    paper_sheet_html.append(f'<h4 class="paper-sheet-heading">{html.escape(s.translated or s.original)}</h4>')
                 elif s.element_type == "reference":
-                    paper_sheet_html.append(f'<div style="font-size: 0.78rem; color: #64748B; margin-bottom: 4px; padding-left: 14px; text-indent: -14px;">{html.escape(s.translated or s.original)}</div>')
+                    paper_sheet_html.append(f'<div class="paper-sheet-ref">{html.escape(s.translated or s.original)}</div>')
                 else:
                     c_txt = highlight_citations_html(s.translated or s.original, is_marked=s.is_marked)
-                    paper_sheet_html.append(f'<p style="color: #E2E8F0; font-size: 0.90rem; line-height: 1.65; margin-bottom: 12px;">{c_txt}</p>')
+                    p_class = "paper-sheet-p-marked" if s.is_marked else "paper-sheet-p"
+                    paper_sheet_html.append(f'<p class="{p_class}">{c_txt}</p>')
 
             if len(segments) > 18:
-                paper_sheet_html.append(f'<div style="text-align: center; color: #64748B; font-size: 0.82rem; margin-top: 16px;">... y {len(segments) - 18} párrafos más. Explóralos todos o marca citas en la sección 2 a continuación.</div>')
+                paper_sheet_html.append(f'<div class="paper-sheet-more">... y {len(segments) - 18} párrafos más. Explóralos todos o marca citas en la sección 2 a continuación.</div>')
 
             paper_sheet_html.append('</div></div>')
             st.markdown("".join(paper_sheet_html), unsafe_allow_html=True)
@@ -586,17 +882,17 @@ if active_context and active_context.get("segments"):
                     p_col1, p_col2 = st.columns([10, 2])
                     with p_col1:
                         if is_m:
-                            header_badge = f'<div style="background:#FDE047; color:#1E1B4B; font-weight:800; font-size:0.75rem; padding:3px 8px; border-radius:4px; display:inline-block; margin-bottom:8px;">⭐ MARCADO PARA CITACIÓN · {html.escape(s.short_provenance)}</div>'
-                            prov_foot = f'<div style="margin-top:8px; font-size:0.80rem; color:#FDE047; font-style:italic;">📌 {html.escape(s.provenance_label)}</div>'
-                            content_style = "font-size: 1.02rem; line-height: 1.65; color: #FEF08A;"
+                            header_badge = f'<div class="preview-p-marked-badge">⭐ MARCADO PARA CITACIÓN · {html.escape(s.short_provenance)}</div>'
+                            prov_foot = f'<div class="preview-p-foot-marked">📌 {html.escape(s.provenance_label)}</div>'
+                            p_html = f'<div class="paper-paragraph-marked">{colored_html}</div>'
                         else:
-                            header_badge = f'<div style="color:#94A3B8; font-size:0.75rem; margin-bottom:6px;">🏷️ {html.escape(s.short_provenance)}</div>'
+                            header_badge = f'<div class="preview-p-normal-badge">🏷️ {html.escape(s.short_provenance)}</div>'
                             prov_foot = ""
-                            content_style = "font-size: 0.98rem; line-height: 1.6; color: #F1F5F9;"
+                            p_html = f'<div class="paper-paragraph-normal">{colored_html}</div>'
 
                         st.markdown(
                             f'{header_badge}'
-                            f'<div style="{content_style}">{colored_html}</div>'
+                            f'{p_html}'
                             f'{prov_foot}',
                             unsafe_allow_html=True,
                         )
@@ -623,14 +919,12 @@ if active_context and active_context.get("segments"):
                     left_html_blocks = []
                     for s in segments:
                         is_m = (s.id in st.session_state.marked_ids)
-                        bg = "rgba(254, 240, 138, 0.18)" if is_m else "rgba(255, 255, 255, 0.04)"
-                        fg = "#FEF08A" if is_m else "#E2E8F0"
-                        border_color = "#F59E0B" if is_m else "#6366F1"
+                        b_class = "bilingual-card-marked" if is_m else "bilingual-card-normal-left"
                         star = "⭐ " if is_m else ""
                         colored_orig = highlight_citations_html(s.original, is_marked=is_m)
                         left_html_blocks.append(
-                            f'<div style="background:{bg}; color:{fg}; padding:10px 14px; border-radius:8px; margin-bottom:10px; font-size:0.92rem; border-left: 4px solid {border_color};">'
-                            f'<strong style="font-size:0.75rem;">{star}[{html.escape(s.short_provenance)}]</strong><br>'
+                            f'<div class="{b_class}">'
+                            f'<strong class="bilingual-prov-label">{star}[{html.escape(s.short_provenance)}]</strong><br>'
                             f'{colored_orig}</div>'
                         )
                     st.markdown("\n".join(left_html_blocks), unsafe_allow_html=True)
@@ -641,14 +935,12 @@ if active_context and active_context.get("segments"):
                     right_html_blocks = []
                     for s in segments:
                         is_m = (s.id in st.session_state.marked_ids)
-                        bg = "rgba(254, 240, 138, 0.18)" if is_m else "rgba(255, 255, 255, 0.04)"
-                        fg = "#FEF08A" if is_m else "#E2E8F0"
-                        border_color = "#F59E0B" if is_m else "#10B981"
+                        b_class = "bilingual-card-marked" if is_m else "bilingual-card-normal-right"
                         star = "⭐ " if is_m else ""
                         colored_trans = highlight_citations_html(s.translated or s.original, is_marked=is_m)
                         right_html_blocks.append(
-                            f'<div style="background:{bg}; color:{fg}; padding:10px 14px; border-radius:8px; margin-bottom:10px; font-size:0.92rem; border-left: 4px solid {border_color};">'
-                            f'<strong style="font-size:0.75rem;">{star}[{html.escape(s.short_provenance)}]</strong><br>'
+                            f'<div class="{b_class}">'
+                            f'<strong class="bilingual-prov-label">{star}[{html.escape(s.short_provenance)}]</strong><br>'
                             f'{colored_trans}</div>'
                         )
                     st.markdown("\n".join(right_html_blocks), unsafe_allow_html=True)
@@ -676,7 +968,7 @@ if active_context and active_context.get("segments"):
         # Ficha Destacada de Procedencia con estructura estable
         with st.container(border=True):
             if is_sel_marked:
-                st.markdown('<div style="background:#FDE047; color:#1E1B4B; font-weight:800; font-size:0.80rem; padding:4px 10px; border-radius:4px; display:inline-block; margin-bottom:8px;">⭐ PÁRRAFO MARCADO Y REGISTRADO PARA CITACIÓN / AUDITORÍA</div>', unsafe_allow_html=True)
+                st.markdown('<div class="inspector-marked-banner">⭐ PÁRRAFO MARCADO Y REGISTRADO PARA CITACIÓN / AUDITORÍA</div>', unsafe_allow_html=True)
             st.markdown(f"#### 📍 {sel_seg.provenance_label}")
             st.caption(
                 f"**Identificador:** `seg_id #{sel_seg.id}` &nbsp;|&nbsp; "
