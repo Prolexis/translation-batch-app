@@ -1,13 +1,6 @@
 [client]
 showErrorDetails = true
 
-[theme]
-base = "light"
-primaryColor = "#4338CA"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F8FAFC"
-textColor = "#0F172A"
-
 [server]
 enableCORS = false
 enableXsrfProtection = false
