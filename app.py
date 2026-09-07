@@ -264,7 +264,24 @@ if _active_theme == "dark":
         div[data-testid="stMetricLabel"] p {
             color: #94A3B8 !important;
         }
-        p, span, label, h1, h2, h3, h4, h5, h6 {
+        /* Bloques de código (st.code) legibles en Modo Oscuro */
+        [data-testid="stCodeBlock"],
+        [data-testid="stCodeBlock"] pre,
+        [data-testid="stCodeBlock"] code,
+        [data-testid="stCodeBlock"] span,
+        [data-testid="stCodeBlock"] code *,
+        pre code,
+        pre code span {
+            color: #F0F6FC !important;
+            background-color: #0D1117 !important;
+        }
+        [data-testid="stCodeBlock"] code span,
+        [data-testid="stCodeBlock"] code * {
+            background: transparent !important;
+        }
+        p:not([data-testid="stCodeBlock"] *):not(code *):not(pre *),
+        span:not([data-testid="stCodeBlock"] *):not(code *):not(pre *),
+        label, h1, h2, h3, h4, h5, h6 {
             color: #F8FAFC;
         }
     """
@@ -444,7 +461,28 @@ else:
         div[data-testid="stMetricLabel"] p {
             color: #475569 !important;
         }
-        p, span, label, h1, h2, h3, h4, h5, h6 {
+        /* Bloques de código (st.code) legibles con alto contraste en Modo Claro */
+        [data-testid="stCodeBlock"],
+        [data-testid="stCodeBlock"] pre,
+        [data-testid="stCodeBlock"] code,
+        [data-testid="stCodeBlock"] span,
+        [data-testid="stCodeBlock"] code *,
+        pre code,
+        pre code span {
+            color: #F0F6FC !important;
+            background-color: #0D1117 !important;
+        }
+        [data-testid="stCodeBlock"] code span,
+        [data-testid="stCodeBlock"] code * {
+            background: transparent !important;
+        }
+        [data-testid="stCodeBlock"] pre {
+            border: 1px solid #30363D !important;
+            border-radius: 8px !important;
+        }
+        p:not([data-testid="stCodeBlock"] *):not(code *):not(pre *),
+        span:not([data-testid="stCodeBlock"] *):not(code *):not(pre *),
+        label, h1, h2, h3, h4, h5, h6 {
             color: #0F172A;
         }
     """
