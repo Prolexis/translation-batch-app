@@ -828,20 +828,6 @@ with st.sidebar:
             else:
                 st.error("No se encontró el archivo de muestra DOCX.")
 
-# ------------------------------------------------------------------------------
-# Encabezado Principal (Hero) con Selector Rápido de Tema
-# ------------------------------------------------------------------------------
-top_bar_col1, top_bar_col2 = st.columns([8, 2])
-with top_bar_col2:
-    active_th = st.session_state.get("theme_choice", "light")
-    if active_th == "light":
-        if st.button("🌙 Modo Oscuro", key="main_top_theme_btn", use_container_width=True):
-            st.session_state.theme_choice = "dark"
-            st.rerun()
-    else:
-        if st.button("☀️ Modo Claro", key="main_top_theme_btn", use_container_width=True):
-            st.session_state.theme_choice = "light"
-            st.rerun()
 
 st.markdown("""
 <div class="hero-banner">
