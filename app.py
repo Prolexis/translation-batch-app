@@ -835,3 +835,11 @@ if active_context and active_context.get("segments"):
 
 elif active_context and active_context.get("error"):
     st.error(f"❌ Error al procesar el archivo: {active_context['error']}")
+
+
+if __name__ == "__main__":
+    if hasattr(st, "runtime") and not st.runtime.exists():
+        import sys
+        from streamlit.web import cli as stcli
+        sys.argv = ["streamlit", "run", sys.argv[0]]
+        sys.exit(stcli.main())
