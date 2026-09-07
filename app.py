@@ -230,19 +230,32 @@ if _active_theme == "dark":
             color: #FFFFFF !important;
         }
         /* Expanders y Contenedores */
-        div[data-testid="stExpander"] {
-            background-color: rgba(30, 41, 59, 0.5) !important;
-            border: 1px solid #334155 !important;
-        }
+        div[data-testid="stExpander"],
+        div[data-testid="stExpander"] details,
         div[data-testid="stExpander"] summary {
+            background-color: #161B22 !important;
+            color: #F8FAFC !important;
+            border-color: #334155 !important;
+        }
+        div[data-testid="stExpander"] summary * {
             color: #F8FAFC !important;
         }
         div[data-testid="stContainer"] {
             border-color: #334155 !important;
         }
-        textarea, input[type="text"] {
+        textarea, input,
+        input[type="text"], input[type="password"],
+        textarea:disabled, input:disabled,
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea,
+        div[data-baseweb="input"],
+        div[data-baseweb="input"] input,
+        div[data-baseweb="base-input"],
+        div[data-baseweb="textarea"] textarea {
             background-color: #161B22 !important;
             color: #F8FAFC !important;
+            -webkit-text-fill-color: #F8FAFC !important;
+            opacity: 1 !important;
             border: 1px solid #334155 !important;
         }
         div[data-testid="stMetricValue"] {
@@ -397,20 +410,33 @@ else:
             fill: #0F172A !important;
         }
         /* Expanders y Contenedores */
-        div[data-testid="stExpander"] {
-            background-color: #FFFFFF !important;
-            border: 1px solid #CBD5E1 !important;
-        }
+        div[data-testid="stExpander"],
+        div[data-testid="stExpander"] details,
         div[data-testid="stExpander"] summary {
+            background-color: #FFFFFF !important;
+            color: #0F172A !important;
+            border-color: #CBD5E1 !important;
+        }
+        div[data-testid="stExpander"] summary * {
             color: #0F172A !important;
         }
         div[data-testid="stContainer"] {
             border-color: #CBD5E1 !important;
         }
-        textarea, input[type="text"] {
+        textarea, input,
+        input[type="text"], input[type="password"],
+        textarea:disabled, input:disabled,
+        [data-testid="stTextInput"] input,
+        [data-testid="stTextArea"] textarea,
+        div[data-baseweb="input"],
+        div[data-baseweb="input"] input,
+        div[data-baseweb="base-input"],
+        div[data-baseweb="textarea"] textarea {
             background-color: #FFFFFF !important;
             color: #0F172A !important;
-            border-color: #CBD5E1 !important;
+            -webkit-text-fill-color: #0F172A !important;
+            opacity: 1 !important;
+            border: 1px solid #CBD5E1 !important;
         }
         div[data-testid="stMetricValue"] {
             color: #0F172A !important;
@@ -1251,8 +1277,8 @@ if active_context and active_context.get("segments"):
                 "Original",
                 value=sel_seg.original,
                 height=180,
-                disabled=True,
                 key=f"orig_area_{sel_seg.id}",
+                help="Texto fuente original en inglés extraído del documento.",
             )
             st.caption(f"Longitud: {len(sel_seg.original.split())} palabras · Página {sel_seg.page}")
 
