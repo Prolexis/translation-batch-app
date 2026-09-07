@@ -449,6 +449,42 @@ else:
         }
     """
 
+# 0. Protección de React DOM contra mutaciones de Google Translate / extensiones (evita NotFoundError: removeChild)
+st.markdown("""
+<div style="display:none" aria-hidden="true">
+<img src="x" style="display:none" onerror="(function(){
+    var targetWin = window;
+    try { if (window.parent && window.parent.Node) targetWin = window.parent; } catch(e) {}
+    if (targetWin._react_dom_patch_applied) return;
+    targetWin._react_dom_patch_applied = true;
+    try {
+        if (typeof targetWin.Node === 'function' && targetWin.Node.prototype) {
+            var origRemoveChild = targetWin.Node.prototype.removeChild;
+            targetWin.Node.prototype.removeChild = function(child) {
+                if (child && child.parentNode !== this) {
+                    return child;
+                }
+                return origRemoveChild.apply(this, arguments);
+            };
+            var origInsertBefore = targetWin.Node.prototype.insertBefore;
+            targetWin.Node.prototype.insertBefore = function(newNode, refNode) {
+                if (refNode && refNode.parentNode !== this) {
+                    return newNode;
+                }
+                return origInsertBefore.apply(this, arguments);
+            };
+        }
+        document.documentElement.setAttribute('translate', 'no');
+        document.documentElement.classList.add('notranslate');
+        if (document.body) {
+            document.body.setAttribute('translate', 'no');
+            document.body.classList.add('notranslate');
+        }
+    } catch(e) {}
+})()" />
+</div>
+""", unsafe_allow_html=True)
+
 # 1. Inyección de variables CSS dinámicas de Tema
 st.markdown(f"""
 <style>
@@ -1359,9 +1395,19 @@ if active_context and active_context.get("segments"):
     # --------------------------------------------------------------------------
     with tab_citations:
         if not marked_segs:
-            st.info("Aún no has marcado ningún párrafo. Puedes marcar párrafos en la pestaña de **Previsualización** o en el **Inspector** para generar tu ficha de citación.")
+            st.markdown(
+                """<div style="background: rgba(59, 130, 246, 0.12); border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 8px; padding: 14px 18px; margin-bottom: 16px; color: var(--paper-text);" translate="no" class="notranslate">
+                    ℹ️ Aún no has marcado ningún párrafo. Puedes marcar párrafos en la pestaña de <strong>1. Leer y Marcar Párrafos</strong> o en el <strong>2. Inspector Detallado</strong> para generar tu ficha de citación.
+                </div>""",
+                unsafe_allow_html=True,
+            )
         else:
-            st.success(f"Has seleccionado **{len(marked_segs)} extractos** con trazabilidad de origen.")
+            st.markdown(
+                f"""<div style="background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.4); border-radius: 8px; padding: 14px 18px; margin-bottom: 16px; color: var(--paper-text); font-weight: 500;" translate="no" class="notranslate">
+                    ✅ Has seleccionado <strong>{len(marked_segs)} extractos</strong> con trazabilidad de origen.
+                </div>""",
+                unsafe_allow_html=True,
+            )
 
             dossier_text = export_citations_dossier(segments)
 
@@ -1387,7 +1433,12 @@ if active_context and active_context.get("segments"):
     st.caption("Descarga una versión especial del documento con los párrafos que seleccionaste resaltados en amarillo y con su procedencia al pie:")
 
     if not marked_segs:
-        st.info("💡 **Consejo:** Si deseas descargar el paper con citas resaltadas en amarillo y su nota de procedencia exacta, selecciona los párrafos que desees en la pestaña **'1. Leer y Marcar Párrafos'**.")
+        st.markdown(
+            """<div style="background: rgba(59, 130, 246, 0.10); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 16px; color: var(--paper-text);" translate="no" class="notranslate">
+                💡 <strong>Consejo:</strong> Si deseas descargar el paper con citas resaltadas en amarillo y su nota de procedencia exacta, selecciona los párrafos que desees en la pestaña <strong>'1. Leer y Marcar Párrafos'</strong>.
+            </div>""",
+            unsafe_allow_html=True,
+        )
 
     en_col1, en_col2 = st.columns(2)
     with en_col1:
