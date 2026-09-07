@@ -811,6 +811,17 @@ with st.sidebar:
         )
 
     with st.expander("⚙️ Opciones Avanzadas (Opcional)"):
+        speed_mode = st.selectbox(
+            "Velocidad de Traducción",
+            options=["ultra", "balanced", "conservative"],
+            index=0,
+            format_func=lambda x: {
+                "ultra": "⚡ Ultra Rápido (Lotes de 16 párrafos · Recomendado)",
+                "balanced": "⚖️ Equilibrado (Lotes de 10 párrafos)",
+                "conservative": "🛡️ Seguro / Paso a Paso (Lotes de 6 párrafos)",
+            }.get(x, x),
+            help="Agrupa múltiples párrafos por llamada para traducir en segundos y evitar pausas de rate-limit.",
+        )
         alignment_mode = st.selectbox(
             "Método de Alineación",
             options=["position", "semantic"],
@@ -925,11 +936,20 @@ if st.session_state.uploaded_map:
         else:
             st.session_state.processing = True
             st.session_state.marked_ids.clear()
+            speed_map = {
+                "ultra": (16, 5),
+                "balanced": (10, 4),
+                "conservative": (6, 3),
+            }
+            eff_batch_size, eff_workers = speed_map.get(speed_mode, (16, 5))
+
             orchestrator = TranslationOrchestrator(
                 source_lang=source_lang,
                 target_lang=target_lang,
                 alignment_mode=alignment_mode,
                 api_key=api_key_input,
+                batch_size=eff_batch_size,
+                max_workers=eff_workers,
             )
 
             progress_bar = st.progress(0.0, text="Iniciando traducción académica...")

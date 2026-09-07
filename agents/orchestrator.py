@@ -40,17 +40,24 @@ ProgressCallback = Optional[Callable[[str, float], None]]
 
 class TranslationOrchestrator:
     def __init__(self, source_lang: str = None, target_lang: str = None,
-                 alignment_mode: str = None, api_key: str = None):
+                 alignment_mode: str = None, api_key: str = None,
+                 batch_size: int = None, max_workers: int = None):
         self.source_lang = source_lang or settings.DEFAULT_SOURCE_LANG
         self.target_lang = target_lang or settings.DEFAULT_TARGET_LANG
         self.alignment_mode = alignment_mode or settings.ALIGNMENT_MODE
         self.api_key = api_key or settings.GEMINI_API_KEY
+        self.batch_size = batch_size or getattr(settings, "DEFAULT_BATCH_SIZE", 16)
+        self.max_workers = max_workers or getattr(settings, "DEFAULT_MAX_WORKERS", 5)
 
         # Memoria compartida entre agentes
         self.memory = ConversationBufferMemory(return_messages=True)
 
         self.extractor = ExtractorAgent()
-        self.translator = TranslatorAgent(api_key=self.api_key)
+        self.translator = TranslatorAgent(
+            api_key=self.api_key,
+            batch_size=self.batch_size,
+            max_workers=self.max_workers,
+        )
         self.validator = ValidatorAgent()
         self.aligner = AlignerAgent(api_key=self.api_key)
 
@@ -69,6 +76,8 @@ class TranslationOrchestrator:
             "source_lang": self.source_lang,
             "target_lang": self.target_lang,
             "alignment_mode": self.alignment_mode,
+            "batch_size": self.batch_size,
+            "max_workers": self.max_workers,
             "translator_agent": self.translator,
             "memory_log": [],
             "started_at": time.time(),

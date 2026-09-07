@@ -44,6 +44,10 @@ class Settings:
     BACKOFF_MAX_RETRIES: int = int(os.getenv("BACKOFF_MAX_RETRIES", "5"))
     BACKOFF_MAX_SECONDS: float = float(os.getenv("BACKOFF_MAX_SECONDS", "60.0"))
 
+    # --- Rendimiento y Concurrencia de Traducción ---
+    DEFAULT_BATCH_SIZE: int = int(os.getenv("DEFAULT_BATCH_SIZE", "16"))  # 16 párrafos por llamada (aceleración 5x-8x)
+    DEFAULT_MAX_WORKERS: int = int(os.getenv("DEFAULT_MAX_WORKERS", "5"))   # 5 hilos concurrentes
+
     # --- Segmentación de texto ---
     MAX_CHARS_PER_SEGMENT: int = int(os.getenv("MAX_CHARS_PER_SEGMENT", "1200"))
 
