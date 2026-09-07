@@ -13,8 +13,15 @@ al español, con trazabilidad exacta de origen:
 ================================================================================
 """
 
-import io
+import sys
 import os
+
+# Garantizar que el directorio raíz del proyecto esté en sys.path (imprescindible en Streamlit Cloud)
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
+
+import io
 import re
 import html
 import time
@@ -25,22 +32,30 @@ from typing import List, Set, Optional, Dict, Any, Tuple
 
 import streamlit as st
 
-from config import settings
-from utils.file_handlers import (
-    Segment,
-    extract_academic_segments,
-    export_segments,
-    export_citations_dossier,
-    highlight_citations_html,
-    UnsupportedFormatError,
-    CorruptFileError,
-)
-from utils.colors import color_for_index, render_highlighted_html
-from agents.orchestrator import TranslationOrchestrator
-
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("translation_app.ui")
+
+from config import settings
+try:
+    from utils.file_handlers import (
+        Segment,
+        extract_academic_segments,
+        export_segments,
+        export_citations_dossier,
+        highlight_citations_html,
+        UnsupportedFormatError,
+        CorruptFileError,
+    )
+except Exception as _import_exc:
+    import traceback
+    logger.error("Error crítico importando utils.file_handlers: %s", _import_exc)
+    st.error(f"❌ Error al inicializar componentes del sistema (`utils.file_handlers`): {_import_exc}")
+    st.code(traceback.format_exc())
+    st.stop()
+
+from utils.colors import color_for_index, render_highlighted_html
+from agents.orchestrator import TranslationOrchestrator
 
 # Configuración de página en Streamlit
 st.set_page_config(

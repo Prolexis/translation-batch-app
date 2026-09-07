@@ -15,15 +15,55 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
-import docx
-from docx import Document as DocxDocument
-from docx.enum.text import WD_COLOR_INDEX
-from docx.shared import Pt, Inches, RGBColor
-from pypdf import PdfReader
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import cm
-from reportlab.pdfgen import canvas
-from reportlab.lib.utils import simpleSplit
+# --- Importaciones de Librerías Externas con Resiliencia de Despliegue ---
+try:
+    import docx
+    from docx import Document as DocxDocument
+    try:
+        from docx.enum.text import WD_COLOR_INDEX
+    except ImportError:
+        try:
+            from docx.enum.text import WD_COLOR as WD_COLOR_INDEX
+        except ImportError:
+            WD_COLOR_INDEX = None
+    from docx.shared import Pt, Inches, RGBColor
+    DOCX_AVAILABLE = True
+    _docx_error = ""
+except Exception as _err:
+    docx = None
+    DocxDocument = None
+    WD_COLOR_INDEX = None
+    Pt = Inches = RGBColor = None
+    DOCX_AVAILABLE = False
+    _docx_error = str(_err)
+
+try:
+    from pypdf import PdfReader
+    PYPDF_AVAILABLE = True
+    _pypdf_error = ""
+except Exception as _err:
+    PdfReader = None
+    PYPDF_AVAILABLE = False
+    _pypdf_error = str(_err)
+
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import cm
+    from reportlab.pdfgen import canvas
+    try:
+        from reportlab.lib.utils import simpleSplit
+    except ImportError:
+        def simpleSplit(text, fontName, fontSize, maxWidth):
+            return text.split("\n")
+    REPORTLAB_AVAILABLE = True
+    _reportlab_error = ""
+except Exception as _err:
+    A4 = (595.27, 841.89)  # Fallback A4 dimensions in points
+    cm = 28.3464567
+    canvas = None
+    simpleSplit = lambda text, *_: text.split("\n")
+    REPORTLAB_AVAILABLE = False
+    _reportlab_error = str(_err)
 
 
 class UnsupportedFormatError(Exception):
@@ -250,6 +290,8 @@ def _parse_pdf_page_blocks(page_text: str) -> List[str]:
 
 def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
     """Extrae párrafos de PDF preservando número de página real y secciones."""
+    if not PYPDF_AVAILABLE:
+        raise UnsupportedFormatError(f"La librería 'pypdf' no está disponible en este entorno: {_pypdf_error}")
     try:
         reader = PdfReader(io.BytesIO(file_bytes))
     except Exception as exc:
@@ -320,6 +362,8 @@ def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
 
 def extract_academic_docx(file_bytes: bytes) -> List[Segment]:
     """Extrae párrafos de DOCX detectando estilos de encabezado y estimando páginas."""
+    if not DOCX_AVAILABLE:
+        raise UnsupportedFormatError(f"La librería 'python-docx' no está disponible en este entorno: {_docx_error}")
     try:
         doc = docx.Document(io.BytesIO(file_bytes))
     except Exception as exc:
@@ -515,9 +559,15 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
       - Referencias bibliográficas formateadas
       - Resaltado y nota de procedencia si enriched=True
     """
-    from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
-    from docx.enum.section import WD_SECTION
+    if not DOCX_AVAILABLE:
+        raise UnsupportedFormatError(f"No se puede generar .docx (librería 'python-docx' no disponible): {_docx_error}")
+
+    try:
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+        from docx.enum.section import WD_SECTION
+    except ImportError:
+        OxmlElement = qn = WD_SECTION = None
 
     doc = DocxDocument()
 
@@ -648,6 +698,10 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
       - Referencias en dos columnas con tipografía compacta
       - Encabezado y número de página continuo en el pie de página
     """
+    if not REPORTLAB_AVAILABLE:
+        # Fallback si reportlab no está disponible en el entorno
+        return export_txt(segments, enriched=enriched)
+
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=A4)
     width, height = A4
