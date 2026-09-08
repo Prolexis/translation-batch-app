@@ -487,40 +487,17 @@ else:
         }
     """
 
-# 0. Protección de React DOM contra mutaciones de Google Translate / extensiones (evita NotFoundError: removeChild)
+# 0. Meta tag y directivas anti-traducción en navegadores (sin manipular Node.prototype ni interferir con React)
 st.markdown("""
-<div style="display:none" aria-hidden="true">
-<img src="x" style="display:none" onerror="(function(){
-    var targetWin = window;
-    try { if (window.parent && window.parent.Node) targetWin = window.parent; } catch(e) {}
-    if (targetWin._react_dom_patch_applied) return;
-    targetWin._react_dom_patch_applied = true;
-    try {
-        if (typeof targetWin.Node === 'function' && targetWin.Node.prototype) {
-            var origRemoveChild = targetWin.Node.prototype.removeChild;
-            targetWin.Node.prototype.removeChild = function(child) {
-                if (child && child.parentNode !== this) {
-                    return child;
-                }
-                return origRemoveChild.apply(this, arguments);
-            };
-            var origInsertBefore = targetWin.Node.prototype.insertBefore;
-            targetWin.Node.prototype.insertBefore = function(newNode, refNode) {
-                if (refNode && refNode.parentNode !== this) {
-                    return newNode;
-                }
-                return origInsertBefore.apply(this, arguments);
-            };
-        }
-        document.documentElement.setAttribute('translate', 'no');
-        document.documentElement.classList.add('notranslate');
-        if (document.body) {
-            document.body.setAttribute('translate', 'no');
-            document.body.classList.add('notranslate');
-        }
-    } catch(e) {}
-})()" />
-</div>
+<meta name="google" content="notranslate" />
+<style>
+    html, body, .stApp {
+        translate: no !important;
+    }
+    .notranslate {
+        translate: no !important;
+    }
+</style>
 """, unsafe_allow_html=True)
 
 # 1. Inyección de variables CSS dinámicas de Tema
@@ -1078,16 +1055,7 @@ if st.session_state.uploaded_map:
             st.session_state.processing = True
             st.session_state.marked_ids.clear()
 
-            # Asegurar recarga de agentes si Streamlit Cloud mantiene módulos previos en sys.modules
-            try:
-                import importlib
-                import agents.orchestrator
-                import agents.translator_agent
-                importlib.reload(agents.translator_agent)
-                importlib.reload(agents.orchestrator)
-                from agents.orchestrator import TranslationOrchestrator
-            except Exception as _reload_err:
-                logger.debug("Aviso de recarga de módulos: %s", _reload_err)
+            from agents.orchestrator import TranslationOrchestrator
 
             speed_map = {
                 "ultra": (16, 5),
