@@ -93,7 +93,7 @@ class Segment:
     subsection: str = ""              # Ej: "3.2 Data Collection"
     page: int = 1                     # Número de página en el documento original (1-indexed)
     paragraph_num: int = 1            # Número de párrafo dentro de la sección/página (1-indexed)
-    element_type: str = "body"        # title | abstract | heading | body | caption | reference | formula
+    element_type: str = "body"        # metadata | title | authors | affiliations | abstract | keywords | heading | body | caption | reference | formula
     is_marked: bool = False           # Marcado por el usuario para citación o auditoría
 
     @property
@@ -224,72 +224,198 @@ def _detect_element_type(text: str, current_section: str, page_num: int, is_firs
 # Extractores con Trazabilidad (PDF, DOCX, TXT)
 # --------------------------------------------------------------------------
 
-def _parse_pdf_page_blocks(page_text: str) -> List[str]:
-    """Segmenta el texto de una página PDF en párrafos y encabezados reales sin partir oraciones internas."""
-    text = page_text.replace("\r\n", "\n").replace("\r", "\n")
-
-    # Si la página ya tiene saltos dobles claros de párrafo, respetarlos
-    if "\n\n" in text:
-        raw_paras = [p.strip() for p in text.split("\n\n") if p.strip()]
-        result = []
-        for p in raw_paras:
-            lines = [l.strip() for l in p.split("\n") if l.strip()]
-            curr = []
-            for line in lines:
-                is_head = bool(_SECTION_REGEX.match(line) or _REFERENCES_HEADER_REGEX.match(line))
-                is_ref = bool(re.match(r"^\[\d+\]", line))
-                if is_head or is_ref:
-                    if curr:
-                        result.append(" ".join(curr))
-                        curr = []
-                    result.append(line)
-                else:
-                    curr.append(line)
-            if curr:
-                result.append(" ".join(curr))
-        return result
-
-    # Caso en que el PDF solo tiene saltos simples (\n) por ajuste de línea
-    lines = [l.strip() for l in text.split("\n") if l.strip()]
-    filtered = []
-    for l in lines:
-        if re.match(r"^(?:Page\s+\d+\s+of\s+\d+|\d+|Survey\s+on\s+.*)$", l, re.IGNORECASE):
-            continue
-        filtered.append(l)
-
-    blocks = []
+def _clamp_paragraph(text: str, max_chars: int = 850) -> List[str]:
+    """Divide párrafos excesivamente largos en oraciones gramaticales legibles."""
+    text = text.strip()
+    if len(text) <= max_chars:
+        return [text]
+    sentences = re.split(r'(?<=\.)\s+(?=[A-Z\u00C0-\u017F0-9])', text)
+    result = []
     curr = []
-    for line in filtered:
+    curr_len = 0
+    for s in sentences:
+        if curr and (curr_len + len(s) + 1 > max_chars):
+            result.append(" ".join(curr))
+            curr = [s]
+            curr_len = len(s)
+        else:
+            curr.append(s)
+            curr_len += len(s) + 1
+    if curr:
+        result.append(" ".join(curr))
+    return result if result else [text]
+
+
+def _decompose_page1_academic(lines: List[str]) -> List[Tuple[str, Optional[str], str]]:
+    """
+    Descompone rigurosamente la primera página de un paper científico (IEEE, ACM, ArXiv, etc.)
+    en sus componentes estructurales reales:
+      (element_type, section_name, text)
+      Tipos: metadata, title, authors, affiliations, abstract, keywords, heading, body
+    """
+    results: List[Tuple[str, Optional[str], str]] = []
+    state = "SEARCH_METADATA"
+    curr_text: List[str] = []
+
+    i = 0
+    while i < len(lines):
+        line = lines[i].strip()
+        if not line:
+            i += 1
+            continue
+
+        is_doi_or_rec = bool(re.search(
+            r'(?:digital object identifier|doi[\:\s]|10\.\d{4,9}/|received\s+[a-z]+|recibido\s+|accepted\s+|aceptado\s+|date of publication|fecha de publicaci[oó]n|current version)',
+            line, re.I
+        ))
+        is_abs_start = bool(re.match(r'^(?:abstract|resumen)(?:[\:\—\-\.\s]|$)', line, re.I))
+        is_key_start = bool(re.match(r'^(?:index terms|keywords|palabras clave|key words|t[eé]rminos de [ií]ndice)(?:[\:\—\-\.\s]|$)', line, re.I))
+        is_sec_head = bool(re.match(r'^(?:(?:[IVXLCDM]+|[1-9]\d?)\.|\d+\.\d+)\s+[A-Z\u00C0-\u017F]', line))
+        is_author_marker = bool(
+            re.search(r'\b(?:dr\.|prof\.|phd|member|fellow|senior member),?\s*(?:ieee)?\b', line, re.I)
+            or re.search(r'\b(?:and|y)\s+[A-Z\s\.\-]{3,}\b', line)
+            or (line.isupper() and len(line.split()) >= 2 and len(line.split()) <= 12 and not line.endswith('.'))
+        )
+        is_affil_marker = bool(
+            re.search(r'(?:\d+\s*[A-Za-z]*department|\bdepartment|\bdepartamento|\bfaculty|\bfacultad|\bschool|\bescuela|\buniversity|\buniversidad|\binstitute|\binstituto|\blaboratory|\blaboratorio|\bcorresponding author|\bautor de correspondencia|\bthis work was supported|\beste trabajo fue financiado|\bemail[\:\s])', line, re.I)
+            or re.match(r'^\d+\s*[A-Z]', line)
+        )
+
+        if is_abs_start:
+            if curr_text:
+                t = state.lower() if state in ["METADATA", "TITLE", "AUTHORS", "AFFILIATIONS"] else "body"
+                results.append((t, None, " ".join(curr_text)))
+                curr_text = []
+            state = "ABSTRACT"
+            curr_text.append(line)
+            i += 1
+            continue
+
+        if is_key_start:
+            if curr_text:
+                results.append(("abstract" if state == "ABSTRACT" else "body", "Resumen" if state == "ABSTRACT" else None, " ".join(curr_text)))
+                curr_text = []
+            state = "KEYWORDS"
+            curr_text.append(line)
+            i += 1
+            continue
+
+        if is_sec_head:
+            if curr_text:
+                results.append((state.lower() if state in ["ABSTRACT", "KEYWORDS"] else "body", None, " ".join(curr_text)))
+                curr_text = []
+            results.append(("heading", line, line))
+            state = "BODY"
+            i += 1
+            continue
+
+        if state == "SEARCH_METADATA":
+            if is_doi_or_rec:
+                curr_text.append(line)
+                state = "METADATA"
+                i += 1
+                continue
+            else:
+                state = "TITLE"
+                curr_text.append(line)
+                i += 1
+                continue
+
+        if state == "METADATA":
+            if is_doi_or_rec:
+                curr_text.append(line)
+                i += 1
+                continue
+            else:
+                results.append(("metadata", "Encabezado", " ".join(curr_text)))
+                curr_text = [line]
+                state = "TITLE"
+                i += 1
+                continue
+
+        if state == "TITLE":
+            if is_author_marker or is_affil_marker:
+                results.append(("title", "Título", " ".join(curr_text)))
+                curr_text = [line]
+                state = "AUTHORS" if is_author_marker else "AFFILIATIONS"
+                i += 1
+                continue
+            else:
+                curr_text.append(line)
+                i += 1
+                continue
+
+        if state == "AUTHORS":
+            if is_affil_marker:
+                results.append(("authors", "Autores", " ".join(curr_text)))
+                curr_text = [line]
+                state = "AFFILIATIONS"
+                i += 1
+                continue
+            else:
+                curr_text.append(line)
+                i += 1
+                continue
+
+        if state == "AFFILIATIONS":
+            curr_text.append(line)
+            i += 1
+            continue
+
+        curr_text.append(line)
+        i += 1
+
+    if curr_text:
+        t = state.lower() if state in ["METADATA", "TITLE", "AUTHORS", "AFFILIATIONS", "ABSTRACT", "KEYWORDS"] else "body"
+        results.append((t, None, " ".join(curr_text)))
+
+    return results
+
+
+def _parse_body_page_blocks(lines: List[str], current_section: str) -> List[Tuple[str, Optional[str], str]]:
+    """Procesa páginas posteriores agrupando párrafos y detectando encabezados y referencias."""
+    results: List[Tuple[str, Optional[str], str]] = []
+    curr: List[str] = []
+
+    for line in lines:
         is_heading = bool(_SECTION_REGEX.match(line) or _REFERENCES_HEADER_REGEX.match(line))
         is_ref_item = bool(re.match(r"^\[\d+\]", line))
         is_bullet = bool(re.match(r"^[•\-\*]\s+", line))
 
         if is_heading or is_ref_item or is_bullet:
             if curr:
-                blocks.append(" ".join(curr))
+                clamped = _clamp_paragraph(" ".join(curr))
+                for cp in clamped:
+                    results.append(("body", current_section, cp))
                 curr = []
-            blocks.append(line)
+            if is_heading:
+                results.append(("heading", line, line))
+            elif is_ref_item:
+                results.append(("reference", "Referencias", line))
             continue
 
         if curr:
             prev_line = curr[-1]
-            # Un fin real de párrafo en PDF termina con puntuación Y la línea se corta antes del margen (longitud < 55)
-            is_short_terminator = prev_line.endswith((".", ":", "?", "!")) and len(prev_line) < 55
-            if is_short_terminator and (line[0].isupper() or line.startswith(("$$\\", "$", "["))):
-                blocks.append(" ".join(curr))
+            is_terminator = prev_line.endswith((".", ":", "?", "!"))
+            if is_terminator and (line[0].isupper() or line.startswith(("$$\\", "$", "["))):
+                clamped = _clamp_paragraph(" ".join(curr))
+                for cp in clamped:
+                    results.append(("body", current_section, cp))
                 curr = [line]
                 continue
 
         curr.append(line)
 
     if curr:
-        blocks.append(" ".join(curr))
+        clamped = _clamp_paragraph(" ".join(curr))
+        for cp in clamped:
+            results.append(("body", current_section, cp))
 
-    return blocks
+    return results
 
 
 def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
-    """Extrae párrafos de PDF preservando número de página real y secciones."""
+    """Extrae párrafos de PDF preservando número de página real, componentes de portada y secciones."""
     if not PYPDF_AVAILABLE:
         raise UnsupportedFormatError(f"La librería 'pypdf' no está disponible en este entorno: {_pypdf_error}")
     try:
@@ -302,6 +428,18 @@ def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
             reader.decrypt("")
         except Exception as exc:
             raise CorruptFileError("El PDF está protegido con contraseña.") from exc
+
+    # Detección de encabezados repetidos entre páginas
+    first_lines = []
+    for p in reader.pages[:min(6, len(reader.pages))]:
+        raw = p.extract_text() or ""
+        ls = [l.strip() for l in raw.split("\n") if l.strip()]
+        if ls:
+            first_lines.append(ls[0])
+            if len(ls) > 1:
+                first_lines.append(ls[1])
+
+    repeated_headers = {l for l in first_lines if first_lines.count(l) >= 2 or re.match(r"^(?:page\s+\d+|survey\s+on\s+|ieee\s+access|\d+$)", l, re.I)}
 
     segments: List[Segment] = []
     seg_id = 0
@@ -319,33 +457,55 @@ def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
         if not raw_text:
             continue
 
-        raw_blocks = _parse_pdf_page_blocks(raw_text)
+        lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+        filtered_lines = [
+            l for l in lines
+            if l not in repeated_headers and not re.match(r"^(?:page\s+\d+(?:\s+of\s+\d+)?|\d+|\d+\s*/\s*\d+)$", l, re.I)
+        ]
 
-        for b_idx, block in enumerate(raw_blocks):
-            norm_block = re.sub(r"[ \t]+", " ", block).strip()
-            if not norm_block or len(norm_block) < 3:
+        if not filtered_lines:
+            continue
+
+        if page_idx == 1:
+            raw_tuples = _decompose_page1_academic(filtered_lines)
+        else:
+            raw_tuples = _parse_body_page_blocks(filtered_lines, current_section)
+
+        for elem_type, sec_hint, text_val in raw_tuples:
+            text_val = re.sub(r"[ \t]+", " ", text_val).strip()
+            if not text_val or len(text_val) < 2:
                 continue
 
-            elem_type, new_sec, new_subsec = _detect_element_type(
-                norm_block, current_section, page_idx, is_first=(page_idx == 1 and b_idx == 0)
-            )
-
-            if new_sec:
-                current_section = new_sec
+            if elem_type == "heading":
+                current_section = sec_hint or text_val
                 current_subsection = ""
                 section_paragraph_counter = 0
-            if new_subsec:
-                current_subsection = new_subsec
-
-            if elem_type != "heading":
+                para_num = 1
+            elif elem_type == "metadata":
+                current_section = "Encabezado"
+                para_num = 1
+            elif elem_type == "title":
+                current_section = "Título"
+                para_num = 1
+            elif elem_type == "authors":
+                current_section = "Autores"
+                para_num = 1
+            elif elem_type == "affiliations":
+                current_section = "Afiliaciones"
+                para_num = 1
+            elif elem_type == "abstract":
+                current_section = "Resumen"
+                para_num = 1
+            elif elem_type == "keywords":
+                current_section = "Palabras Clave"
+                para_num = 1
+            else:
                 section_paragraph_counter += 1
                 para_num = section_paragraph_counter
-            else:
-                para_num = 1
 
             seg = Segment(
                 id=seg_id,
-                original=norm_block,
+                original=text_val,
                 section=current_section,
                 subsection=current_subsection,
                 page=page_idx,
@@ -571,25 +731,54 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
 
     doc = DocxDocument()
 
-    # 1. Separar Título, Abstract y Cuerpo
+    # 1. Separar Título, Autores, Afiliaciones, Abstract y Cuerpo
+    metadata_segs = [s for s in segments if s.element_type == "metadata"]
     title_segs = [s for s in segments if s.element_type == "title"]
+    authors_segs = [s for s in segments if s.element_type == "authors"]
+    affiliations_segs = [s for s in segments if s.element_type == "affiliations"]
     abstract_segs = [s for s in segments if s.element_type == "abstract" or s.section.lower() in ["abstract", "resumen"]]
-    body_segs = [s for s in segments if s not in title_segs and s not in abstract_segs]
+    keywords_segs = [s for s in segments if s.element_type == "keywords"]
+    
+    consumed_ids = {s.id for s in (metadata_segs + title_segs + authors_segs + affiliations_segs + abstract_segs + keywords_segs)}
+    body_segs = [s for s in segments if s.id not in consumed_ids]
 
-    # Sección 1 (1 columna): Título y Resumen / Abstract
+    # Sección 1 (1 columna): Metadatos, Título, Autores, Afiliaciones y Resumen / Abstract
+    if metadata_segs:
+        meta_p = doc.add_paragraph()
+        meta_p.paragraph_format.space_after = Pt(4)
+        run_meta = meta_p.add_run(" · ".join((s.translated or s.original) for s in metadata_segs))
+        run_meta.font.size = Pt(8)
+        run_meta.font.color.rgb = RGBColor(100, 116, 139)
+
     if title_segs:
         for ts in title_segs:
             p = doc.add_heading(ts.translated or ts.original, level=0)
-            p.paragraph_format.space_before = Pt(14)
-            p.paragraph_format.space_after = Pt(14)
-    elif segments:
-        # Si no hay title explícito, usar el primer segmento como título si es corto
+            p.paragraph_format.space_before = Pt(8)
+            p.paragraph_format.space_after = Pt(10)
+    elif segments and not body_segs:
         first = segments[0]
         p = doc.add_heading(first.translated or first.original, level=0)
-        p.paragraph_format.space_before = Pt(14)
-        p.paragraph_format.space_after = Pt(14)
-        if first in body_segs:
-            body_segs.remove(first)
+        p.paragraph_format.space_before = Pt(8)
+        p.paragraph_format.space_after = Pt(10)
+
+    # Autores
+    if authors_segs:
+        auth_p = doc.add_paragraph()
+        auth_p.paragraph_format.alignment = 1  # Centrado
+        auth_p.paragraph_format.space_after = Pt(4)
+        run_auth = auth_p.add_run(" · ".join((s.translated or s.original) for s in authors_segs))
+        run_auth.bold = True
+        run_auth.font.size = Pt(10)
+
+    # Afiliaciones
+    if affiliations_segs:
+        affil_p = doc.add_paragraph()
+        affil_p.paragraph_format.alignment = 1  # Centrado
+        affil_p.paragraph_format.space_after = Pt(12)
+        run_affil = affil_p.add_run(" — ".join((s.translated or s.original) for s in affiliations_segs))
+        run_affil.italic = True
+        run_affil.font.size = Pt(8.5)
+        run_affil.font.color.rgb = RGBColor(100, 116, 139)
 
     # Abstract / Resumen
     if abstract_segs:
@@ -598,8 +787,8 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
             p = doc.add_paragraph()
             p.paragraph_format.left_indent = Inches(0.45)
             p.paragraph_format.right_indent = Inches(0.45)
-            p.paragraph_format.space_before = Pt(6)
-            p.paragraph_format.space_after = Pt(12)
+            p.paragraph_format.space_before = Pt(4)
+            p.paragraph_format.space_after = Pt(8)
             run_bold = p.add_run("RESUMEN — ")
             run_bold.bold = True
             run_bold.font.size = Pt(9.5)
@@ -609,6 +798,23 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
             run_text.font.size = Pt(9.5)
             if enriched and ab.is_marked:
                 run_text.font.highlight_color = WD_COLOR_INDEX.YELLOW
+
+    # Palabras clave
+    if keywords_segs:
+        for kw in keywords_segs:
+            text = kw.translated or kw.original
+            p = doc.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.45)
+            p.paragraph_format.right_indent = Inches(0.45)
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(14)
+            run_kw_bold = p.add_run("PALABRAS CLAVE — ")
+            run_kw_bold.bold = True
+            run_kw_bold.font.size = Pt(8.8)
+            clean_kw = re.sub(r"^(?:index terms|keywords|palabras clave)\s*[\:\—\-\.]*\s*", "", text, flags=re.I)
+            run_kw = p.add_run(clean_kw)
+            run_kw.italic = True
+            run_kw.font.size = Pt(8.8)
 
     # Sección 2 (2 columnas para el cuerpo del artículo estilo IEEE)
     body_section = doc.add_section(WD_SECTION.CONTINUOUS)
@@ -712,58 +918,87 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     bottom_margin = 42.0
 
     # Separar Título, Abstract y Cuerpo
+    # Separar Título, Autores, Afiliaciones, Abstract y Cuerpo
+    metadata_segs = [s for s in segments if s.element_type == "metadata"]
     title_segs = [s for s in segments if s.element_type == "title"]
+    authors_segs = [s for s in segments if s.element_type == "authors"]
+    affiliations_segs = [s for s in segments if s.element_type == "affiliations"]
     abstract_segs = [s for s in segments if s.element_type == "abstract" or s.section.lower() in ["abstract", "resumen"]]
-    body_segs = [s for s in segments if s not in title_segs and s not in abstract_segs]
+    keywords_segs = [s for s in segments if s.element_type == "keywords"]
 
-    title_text = ""
-    if title_segs:
-        title_text = _clean_pdf_text(title_segs[0].translated or title_segs[0].original)
-    elif segments:
+    consumed_ids = {s.id for s in (metadata_segs + title_segs + authors_segs + affiliations_segs + abstract_segs + keywords_segs)}
+    body_segs = [s for s in segments if s.id not in consumed_ids]
+
+    metadata_text = _clean_pdf_text(" · ".join((s.translated or s.original) for s in metadata_segs)) if metadata_segs else ""
+    title_text = _clean_pdf_text(title_segs[0].translated or title_segs[0].original) if title_segs else ""
+    if not title_text and segments:
         title_text = _clean_pdf_text(segments[0].translated or segments[0].original)
         if segments[0] in body_segs:
             body_segs.remove(segments[0])
 
-    abstract_text = ""
-    if abstract_segs:
-        abstract_text = _clean_pdf_text(" ".join((s.translated or s.original) for s in abstract_segs))
+    authors_text = _clean_pdf_text(" · ".join((s.translated or s.original) for s in authors_segs)) if authors_segs else ""
+    affiliations_text = _clean_pdf_text(" — ".join((s.translated or s.original) for s in affiliations_segs)) if affiliations_segs else ""
+    abstract_text = _clean_pdf_text(" ".join((s.translated or s.original) for s in abstract_segs)) if abstract_segs else ""
+    keywords_text = _clean_pdf_text(" ".join((s.translated or s.original) for s in keywords_segs)) if keywords_segs else ""
 
     # --------------------------------------------------------------------------
     # PÁGINA 1: Encabezado superior, Título y Caja de Abstract
     # --------------------------------------------------------------------------
     # 1. Banner superior
-    c.setFont("Helvetica-Bold", 7.5)
+    c.setFont("Helvetica-Bold", 7.0)
     c.setFillColorRGB(0.35, 0.38, 0.45)
-    c.drawString(margin, height - 26, "TRADUCCIÓN ACADÉMICA CON TRAZABILIDAD DE ORIGEN")
+    banner_left = metadata_text[:55] if metadata_text else "TRADUCCIÓN ACADÉMICA CON TRAZABILIDAD DE ORIGEN"
+    c.drawString(margin, height - 26, banner_left.upper())
     c.drawRightString(width - margin, height - 26, "REVISTA CIENTÍFICA · FORMATO IEEE")
     c.setStrokeColorRGB(0.78, 0.82, 0.88)
     c.setLineWidth(0.6)
     c.line(margin, height - 30, width - margin, height - 30)
 
     # 2. Título centrado
-    y = height - 52
-    c.setFont("Helvetica-Bold", 14.5)
+    y = height - 50
+    c.setFont("Helvetica-Bold", 14.0)
     c.setFillColorRGB(0.08, 0.10, 0.18)
-    title_lines = simpleSplit(title_text, "Helvetica-Bold", 14.5, width - 2 * margin - 10)
+    title_lines = simpleSplit(title_text, "Helvetica-Bold", 14.0, width - 2 * margin - 20)
     for tl in title_lines:
         c.drawCentredString(width / 2, y, tl)
-        y -= 18
+        y -= 17
 
-    # 3. Subtítulo / Metadatos de procedencia
-    y -= 2
-    c.setFont("Helvetica", 8)
-    c.setFillColorRGB(0.40, 0.44, 0.52)
-    c.drawCentredString(width / 2, y, "Artículo Científico Traducido con Agentes de Inteligencia Artificial y Preservación de Citas")
-    y -= 12
+    # 3. Autores
+    if authors_text:
+        y -= 3
+        c.setFont("Helvetica-Bold", 9.0)
+        c.setFillColorRGB(0.12, 0.16, 0.24)
+        author_lines = simpleSplit(authors_text, "Helvetica-Bold", 9.0, width - 2 * margin - 20)
+        for al in author_lines:
+            c.drawCentredString(width / 2, y, al)
+            y -= 12
 
-    # 4. Caja de Resumen / Abstract
+    # 4. Afiliaciones
+    if affiliations_text:
+        y -= 1
+        c.setFont("Helvetica-Oblique", 7.5)
+        c.setFillColorRGB(0.40, 0.44, 0.52)
+        affil_lines = simpleSplit(affiliations_text, "Helvetica-Oblique", 7.5, width - 2 * margin - 30)
+        for afl in affil_lines:
+            c.drawCentredString(width / 2, y, afl)
+            y -= 10.5
+
+    # 5. Caja de Resumen / Abstract
     if abstract_text:
+        y -= 4
         clean_abs = re.sub(r"^(?:abstract|resumen)\s*[\:\—\-\.]*\s*", "", abstract_text, flags=re.I)
         abs_full = "RESUMEN — " + clean_abs
         c.setFont("Helvetica-Oblique", 8.2)
         abs_lines = simpleSplit(abs_full, "Helvetica-Oblique", 8.2, width - 2 * margin - 22)
+        
+        kw_lines = []
+        if keywords_text:
+            clean_kw = re.sub(r"^(?:index terms|keywords|palabras clave)\s*[\:\—\-\.]*\s*", "", keywords_text, flags=re.I)
+            kw_full = "PALABRAS CLAVE — " + clean_kw
+            kw_lines = simpleSplit(kw_full, "Helvetica-BoldOblique", 7.8, width - 2 * margin - 22)
+
         box_padding = 8
-        abs_box_height = len(abs_lines) * 11.2 + 2 * box_padding
+        abs_box_height = (len(abs_lines) * 11.0) + (len(kw_lines) * 10.2 + 4 if kw_lines else 0) + (2 * box_padding)
 
         # Fondo sombreado suave con borde tenue
         c.saveState()
@@ -777,11 +1012,19 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
         c.setFillColorRGB(0.12, 0.14, 0.20)
         for al in abs_lines:
             c.drawString(margin + 11, y_abs, al)
-            y_abs -= 11.2
+            y_abs -= 11.0
 
-        y -= abs_box_height + 14
+        if kw_lines:
+            y_abs -= 3
+            c.setFont("Helvetica-BoldOblique", 7.8)
+            c.setFillColorRGB(0.20, 0.25, 0.35)
+            for kl in kw_lines:
+                c.drawString(margin + 11, y_abs, kl)
+                y_abs -= 10.2
+
+        y -= abs_box_height + 12
     else:
-        y -= 10
+        y -= 8
 
     # Línea divisoria antes de iniciar las 2 columnas
     c.setStrokeColorRGB(0.82, 0.85, 0.90)

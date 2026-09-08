@@ -602,105 +602,170 @@ st.markdown("""
     }
 
     /* Previsualización: Hoja de Paper Científico */
+    /* Previsualización: Hoja de Paper Científico */
     .paper-sheet-container {
         background: var(--paper-sheet-bg);
         border: 1px solid var(--paper-sheet-border);
         border-radius: 12px;
-        padding: 28px 36px;
-        box-shadow: 0 15px 35px rgba(0,0,0,0.15);
-        max-height: 600px;
+        padding: 36px 44px;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.12);
+        max-height: 720px;
         overflow-y: auto;
     }
 
     .paper-sheet-header {
         text-align: center;
-        font-size: 0.75rem;
-        letter-spacing: 1.5px;
+        font-size: 0.72rem;
+        letter-spacing: 1.4px;
         color: var(--paper-subtext);
         font-weight: 700;
         text-transform: uppercase;
-        margin-bottom: 12px;
+        margin-bottom: 6px;
         border-bottom: 1px solid var(--paper-sheet-border);
-        padding-bottom: 8px;
+        padding-bottom: 6px;
+    }
+
+    .paper-sheet-metadata {
+        font-size: 0.70rem;
+        color: var(--paper-subtext);
+        font-style: italic;
+        margin-top: 4px;
+        letter-spacing: 0;
+        text-transform: none;
     }
 
     .paper-sheet-title {
         text-align: center;
         color: var(--paper-sheet-title);
-        font-size: 1.45rem;
+        font-size: 1.55rem;
         font-weight: 800;
-        line-height: 1.35;
-        margin: 16px 0 8px 0;
+        line-height: 1.32;
+        margin: 16px auto 10px auto;
+        max-width: 820px;
+        letter-spacing: -0.01em;
     }
 
-    .paper-sheet-subtitle {
+    .paper-sheet-authors {
         text-align: center;
-        color: var(--paper-sheet-subtitle);
-        font-size: 0.85rem;
-        margin-bottom: 20px;
-    }
-
-    .paper-sheet-abstract {
-        background: var(--paper-sheet-abstract-bg);
-        border: 1px solid var(--paper-sheet-abstract-border);
-        border-radius: 8px;
-        padding: 14px 18px;
-        margin-bottom: 24px;
-    }
-
-    .paper-sheet-abstract-label {
-        color: var(--paper-sheet-abstract-label);
-        font-size: 0.88rem;
-        letter-spacing: 0.5px;
+        font-size: 0.92rem;
         font-weight: 700;
+        color: var(--paper-text);
+        margin: 8px auto 4px auto;
+        letter-spacing: 0.02em;
+    }
+
+    .paper-sheet-affiliations {
+        text-align: center;
+        font-size: 0.78rem;
+        font-style: italic;
+        color: var(--paper-subtext);
+        margin: 0 auto 16px auto;
+        line-height: 1.45;
+        max-width: 780px;
+    }
+
+    .paper-sheet-abstract-box {
+        background: var(--paper-sheet-abstract-bg);
+        border-top: 1px solid var(--paper-sheet-abstract-border);
+        border-bottom: 1px solid var(--paper-sheet-abstract-border);
+        padding: 14px 20px;
+        margin: 16px 0 18px 0;
+        border-radius: 6px;
+    }
+
+    .paper-sheet-abstract-label,
+    .paper-sheet-keywords-label {
+        color: var(--paper-sheet-abstract-label);
+        font-size: 0.82rem;
+        letter-spacing: 0.5px;
+        font-weight: 800;
     }
 
     .paper-sheet-abstract-text {
         font-style: italic;
         color: var(--paper-sheet-abstract-text);
-        font-size: 0.90rem;
+        font-size: 0.86rem;
         line-height: 1.6;
     }
 
-    .paper-sheet-body-wrap {
-        border-top: 1px solid var(--paper-sheet-border);
-        padding-top: 16px;
+    .paper-sheet-keywords-text {
+        color: var(--paper-sheet-abstract-text);
+        font-size: 0.82rem;
+        line-height: 1.5;
+        font-style: italic;
+    }
+
+    .paper-sheet-divider {
+        border: 0;
+        height: 1px;
+        background: var(--paper-sheet-border);
+        margin: 14px 0 18px 0;
+    }
+
+    .paper-sheet-columns {
+        column-count: 2;
+        column-gap: 30px;
+        column-rule: 1px solid var(--paper-sheet-border);
+        text-align: justify;
+        hyphens: auto;
+    }
+
+    @media (max-width: 768px) {
+        .paper-sheet-columns {
+            column-count: 1;
+        }
     }
 
     .paper-sheet-heading {
         color: var(--paper-sheet-heading);
-        margin-top: 16px;
+        margin-top: 14px;
         margin-bottom: 6px;
-        font-size: 1.05rem;
+        font-size: 0.95rem;
         text-transform: uppercase;
-        font-weight: 700;
+        font-weight: 800;
+        letter-spacing: 0.03em;
+        break-after: avoid;
     }
 
     .paper-sheet-ref {
-        font-size: 0.78rem;
+        font-size: 0.74rem;
         color: var(--paper-subtext);
-        margin-bottom: 4px;
-        padding-left: 14px;
-        text-indent: -14px;
-        line-height: 1.5;
+        margin-bottom: 5px;
+        padding-left: 16px;
+        text-indent: -16px;
+        line-height: 1.45;
+        text-align: left;
+    }
+
+    .paper-sheet-formula {
+        font-family: 'Courier New', monospace;
+        background: var(--paper-sheet-abstract-bg);
+        border: 1px solid var(--paper-sheet-border);
+        border-radius: 4px;
+        padding: 6px 10px;
+        margin: 8px 0;
+        font-size: 0.82rem;
+        text-align: center;
     }
 
     .paper-sheet-p {
         color: var(--paper-text);
-        font-size: 0.90rem;
-        line-height: 1.65;
-        margin-bottom: 12px;
+        font-size: 0.86rem;
+        line-height: 1.6;
+        margin-bottom: 10px;
+        text-indent: 14px;
+        text-align: justify;
     }
 
     .paper-sheet-p-marked {
         color: var(--marked-card-text);
         background: var(--marked-card-bg);
         border-left: 3px solid var(--marked-card-border);
-        padding: 6px 12px;
+        padding: 6px 10px;
         border-radius: 4px;
-        font-size: 0.90rem;
-        line-height: 1.65;
-        margin-bottom: 12px;
+        font-size: 0.86rem;
+        line-height: 1.6;
+        margin-bottom: 10px;
         font-weight: 500;
     }
 
@@ -708,7 +773,9 @@ st.markdown("""
         text-align: center;
         color: var(--paper-subtext);
         font-size: 0.82rem;
-        margin-top: 16px;
+        margin-top: 20px;
+        padding-top: 10px;
+        border-top: 1px dashed var(--paper-sheet-border);
     }
 
     /* Párrafos en Lienzo de Lectura */
@@ -1160,45 +1227,94 @@ if active_context and active_context.get("segments"):
             st.markdown(pdf_embed_html, unsafe_allow_html=True)
         else:
             # Hoja de Paper Científico (Simulador de Paper Real en HTML/CSS adaptable)
-            st.caption("Previsualización estructurada con título, abstract enmarcado y citas resaltadas con color:")
+            st.caption("Previsualización estructurada fiel a formato IEEE / revista académica con 2 columnas reales, título, autores, abstract y citas:")
 
-            title_txt = next((s.translated or s.original for s in segments if s.element_type == "title"), segments[0].translated or segments[0].original)
-            abstract_txt = " ".join(s.translated or s.original for s in segments if s.element_type == "abstract" or s.section.lower() in ["abstract", "resumen"])
+            metadata_segs = [s for s in segments if s.element_type == "metadata"]
+            title_segs = [s for s in segments if s.element_type == "title"]
+            authors_segs = [s for s in segments if s.element_type == "authors"]
+            affiliations_segs = [s for s in segments if s.element_type == "affiliations"]
+            abstract_segs = [s for s in segments if s.element_type == "abstract" or s.section.lower() in ["abstract", "resumen"]]
+            keywords_segs = [s for s in segments if s.element_type == "keywords"]
 
-            paper_sheet_html = [
-                '<div class="paper-sheet-container">',
-                '<div class="paper-sheet-header">REVISTA CIENTÍFICA · TRADUCCIÓN ACADÉMICA IEEE</div>',
-                f'<h2 class="paper-sheet-title">{html.escape(title_txt)}</h2>',
-                '<div class="paper-sheet-subtitle">Artículo Académico Traducido con Preservación de Citas Bibliográficas y Trazabilidad</div>',
-            ]
+            consumed_ids = {s.id for s in (metadata_segs + title_segs + authors_segs + affiliations_segs + abstract_segs + keywords_segs)}
+            body_segs = [s for s in segments if s.id not in consumed_ids]
 
-            if abstract_txt:
-                clean_abs = re.sub(r"^(?:abstract|resumen)\s*[\:\—\-\.]*\s*", "", abstract_txt, flags=re.I)
-                abs_colored = highlight_citations_html(clean_abs, is_marked=False)
-                paper_sheet_html.append(
-                    f'<div class="paper-sheet-abstract">'
-                    f'<strong class="paper-sheet-abstract-label">RESUMEN — </strong>'
-                    f'<span class="paper-sheet-abstract-text">{abs_colored}</span>'
-                    f'</div>'
-                )
+            title_txt = (title_segs[0].translated or title_segs[0].original) if title_segs else ""
+            if not title_txt and segments:
+                title_txt = segments[0].translated or segments[0].original
+                if segments[0] in body_segs:
+                    body_segs.remove(segments[0])
 
-            paper_sheet_html.append('<div class="paper-sheet-body-wrap">')
-            for s in segments[:18]:
-                if s.element_type in ["title", "abstract"] or s.section.lower() in ["abstract", "resumen"]:
-                    continue
+            metadata_txt = " · ".join((s.translated or s.original) for s in metadata_segs) if metadata_segs else ""
+            authors_txt = " · ".join((s.translated or s.original) for s in authors_segs) if authors_segs else ""
+            affiliations_txt = " — ".join((s.translated or s.original) for s in affiliations_segs) if affiliations_segs else ""
+            abstract_txt = " ".join((s.translated or s.original) for s in abstract_segs) if abstract_segs else ""
+            keywords_txt = " ".join((s.translated or s.original) for s in keywords_segs) if keywords_segs else ""
+
+            paper_sheet_html = ['<div class="paper-sheet-container">']
+
+            # 1. Encabezado / Banner superior
+            paper_sheet_html.append('<div class="paper-sheet-header">REVISTA CIENTÍFICA · TRADUCCIÓN ACADÉMICA IEEE')
+            if metadata_txt:
+                paper_sheet_html.append(f'<div class="paper-sheet-metadata">{html.escape(metadata_txt)}</div>')
+            paper_sheet_html.append('</div>')
+
+            # 2. Título principal
+            paper_sheet_html.append(f'<h2 class="paper-sheet-title">{html.escape(title_txt)}</h2>')
+
+            # 3. Autores
+            if authors_txt:
+                paper_sheet_html.append(f'<div class="paper-sheet-authors">{html.escape(authors_txt)}</div>')
+
+            # 4. Afiliaciones
+            if affiliations_txt:
+                paper_sheet_html.append(f'<div class="paper-sheet-affiliations">{html.escape(affiliations_txt)}</div>')
+
+            # 5. Caja de Abstract y Palabras Clave
+            if abstract_txt or keywords_txt:
+                paper_sheet_html.append('<div class="paper-sheet-abstract-box">')
+                if abstract_txt:
+                    clean_abs = re.sub(r"^(?:abstract|resumen)\s*[\:\—\-\.]*\s*", "", abstract_txt, flags=re.I)
+                    abs_colored = highlight_citations_html(clean_abs, is_marked=False)
+                    paper_sheet_html.append(
+                        f'<div class="paper-sheet-abstract">'
+                        f'<strong class="paper-sheet-abstract-label">RESUMEN — </strong>'
+                        f'<span class="paper-sheet-abstract-text">{abs_colored}</span>'
+                        f'</div>'
+                    )
+                if keywords_txt:
+                    clean_kw = re.sub(r"^(?:index terms|keywords|palabras clave)\s*[\:\—\-\.]*\s*", "", keywords_txt, flags=re.I)
+                    paper_sheet_html.append(
+                        f'<div class="paper-sheet-keywords" style="margin-top:6px;">'
+                        f'<strong class="paper-sheet-keywords-label">PALABRAS CLAVE — </strong>'
+                        f'<span class="paper-sheet-keywords-text">{html.escape(clean_kw)}</span>'
+                        f'</div>'
+                    )
+                paper_sheet_html.append('</div>')
+
+            paper_sheet_html.append('<hr class="paper-sheet-divider" />')
+
+            # 6. Cuerpo en DOS COLUMNAS REALES
+            paper_sheet_html.append('<div class="paper-sheet-columns">')
+            for s in body_segs[:26]:
+                text_val = s.translated or s.original
                 if s.element_type == "heading":
-                    paper_sheet_html.append(f'<h4 class="paper-sheet-heading">{html.escape(s.translated or s.original)}</h4>')
+                    paper_sheet_html.append(f'<h4 class="paper-sheet-heading">{html.escape(text_val)}</h4>')
                 elif s.element_type == "reference":
-                    paper_sheet_html.append(f'<div class="paper-sheet-ref">{html.escape(s.translated or s.original)}</div>')
+                    paper_sheet_html.append(f'<div class="paper-sheet-ref">{html.escape(text_val)}</div>')
+                elif s.element_type == "formula":
+                    paper_sheet_html.append(f'<div class="paper-sheet-formula">{html.escape(text_val)}</div>')
                 else:
-                    c_txt = highlight_citations_html(s.translated or s.original, is_marked=s.is_marked)
+                    c_txt = highlight_citations_html(text_val, is_marked=s.is_marked)
                     p_class = "paper-sheet-p-marked" if s.is_marked else "paper-sheet-p"
                     paper_sheet_html.append(f'<p class="{p_class}">{c_txt}</p>')
 
-            if len(segments) > 18:
-                paper_sheet_html.append(f'<div class="paper-sheet-more">... y {len(segments) - 18} párrafos más. Explóralos todos o marca citas en la sección 2 a continuación.</div>')
+            paper_sheet_html.append('</div>')
 
-            paper_sheet_html.append('</div></div>')
+            if len(body_segs) > 26:
+                paper_sheet_html.append(f'<div class="paper-sheet-more">... y {len(body_segs) - 26} párrafos más en el documento. Explóralos todos o marca citas en la sección 2 a continuación.</div>')
+
+            paper_sheet_html.append('</div>')
             st.markdown("".join(paper_sheet_html), unsafe_allow_html=True)
 
     # --------------------------------------------------------------------------

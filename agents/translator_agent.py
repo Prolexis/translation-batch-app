@@ -178,6 +178,10 @@ class TranslatorAgent:
                 seg.translated = seg.original
                 seg.status = "ok"
                 skipped_formulas += 1
+            elif seg.element_type == "authors":
+                # Nombres de autores se preservan intactos
+                seg.translated = seg.original
+                seg.status = "ok"
             elif seg.status == "ok" and seg.translated:
                 pass
             else:
