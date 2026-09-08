@@ -309,7 +309,7 @@ _MATH_FORMULA_REGEX = re.compile(
 
 
 def highlight_citations_html(text: str, is_marked: bool = False) -> str:
-    """Resalta visualmente con color las citas in-text [1] y autor-año (Author, Year) adaptables a modo claro y oscuro."""
+    """Resalta visualmente con color las citas in-text [1], autor-año (Author, Year) y fragmentos exactos <mark>...</mark>."""
     if not text:
         return ""
     # Reparar ligaduras y limpiar expresiones matemáticas para lectura fluida
@@ -319,14 +319,16 @@ def highlight_citations_html(text: str, is_marked: bool = False) -> str:
     import html as _html
     safe = _html.escape(text)
 
-    if is_marked:
-        # En párrafo marcado (fondo amarillo): texto oscuro de alto contraste
-        badge_style = "color: var(--citation-marked-color, #1E1B4B); background: var(--citation-marked-bg, #FDE047); font-weight: 800; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--citation-marked-border, #CA8A04);"
-        badge_class = "academic-citation-marked"
-    else:
-        # En párrafo normal: pastilla con variables CSS adaptables a tema claro y oscuro
-        badge_style = "color: var(--citation-normal-color, #3730A3); background: var(--citation-normal-bg, #EEF2FF); font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--citation-normal-border, #818CF8);"
-        badge_class = "academic-citation"
+    # Convertir &lt;mark&gt; a resaltado visual inline exacto
+    safe = re.sub(
+        r"&lt;mark&gt;([\s\S]*?)&lt;/mark&gt;",
+        r'<mark class="academic-inline-highlight" style="background-color: #FEF08A; color: #0F172A; padding: 1px 4px; border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; font-weight: inherit;">\1</mark>',
+        safe
+    )
+
+    # Pastilla de cita adaptable a tema claro y oscuro
+    badge_style = "color: var(--citation-normal-color, #3730A3); background: var(--citation-normal-bg, #EEF2FF); font-weight: 700; padding: 2px 6px; border-radius: 4px; border: 1px solid var(--citation-normal-border, #818CF8);"
+    badge_class = "academic-citation"
 
     def _rep(m):
         return f'<span class="{badge_class}" style="{badge_style}">{m.group(0)}</span>'
@@ -675,28 +677,79 @@ def _extract_pdf_page_highlights(page) -> List[Tuple[str, str]]:
     return highlights
 
 
-def _match_highlight(text_val: str, page_highlights: List[Tuple[str, str]]) -> Tuple[bool, str]:
-    """Determina si un texto de párrafo coincide o contiene texto subrayado/resaltado."""
+def _inject_inline_marks(text_val: str, page_highlights: List[Tuple[str, str]]) -> Tuple[str, bool, str]:
+    """
+    Inserta etiquetas <mark>...</mark> alrededor de las frases exactas detectadas
+    como subrayadas/resaltadas en el PDF original.
+    Retorna: (texto_con_marcas, tiene_marcas, color_hex)
+    """
     if not text_val or not page_highlights:
-        return False, "#FFD54F"
+        return text_val, False, "#FFD54F"
 
-    clean_val = re.sub(r"\s+", " ", text_val).strip().lower()
+    marked_text = text_val
+    has_any_mark = False
+    chosen_color = "#FFD54F"
 
     for hl_text, color_hex in page_highlights:
-        clean_hl = re.sub(r"\s+", " ", hl_text).strip().lower()
+        if not hl_text or len(hl_text.strip()) < 3:
+            continue
+
+        # 1. Limpiar guiones de salto de línea en la anotación (ej: im-\nprove -> improve)
+        clean_hl = re.sub(r"(\w+)-\s*\n\s*(\w+)", r"\1\2", hl_text)
+        clean_hl = re.sub(r"\s+", " ", clean_hl).strip()
+
         if len(clean_hl) < 3:
             continue
-        if clean_hl in clean_val or clean_val in clean_hl:
-            return True, color_hex
-        if len(clean_hl) > 20 and clean_hl[:25] in clean_val:
-            return True, color_hex
-        hl_words = [w for w in clean_hl.split() if len(w) > 4]
-        if len(hl_words) >= 3:
-            matches = sum(1 for w in hl_words if w in clean_val)
-            if matches / len(hl_words) >= 0.65:
-                return True, color_hex
 
-    return False, "#FFD54F"
+        # 2. Búsqueda exacta directa
+        if clean_hl in marked_text:
+            marked_text = marked_text.replace(clean_hl, f"<mark>{clean_hl}</mark>")
+            has_any_mark = True
+            chosen_color = color_hex
+            continue
+
+        # 3. Búsqueda flexible por palabras separadas por espacios
+        words = clean_hl.split()
+        if len(words) >= 2:
+            escaped_words = [re.escape(w) for w in words]
+            pattern = r"\s+".join(escaped_words)
+            m = re.search(pattern, marked_text, flags=re.IGNORECASE)
+            if m:
+                matched_span = m.group(0)
+                marked_text = marked_text[:m.start()] + f"<mark>{matched_span}</mark>" + marked_text[m.end():]
+                has_any_mark = True
+                chosen_color = color_hex
+                continue
+
+            # 4. Coincidencia por anclas (primeras palabras y últimas palabras) para frases largas
+            if len(words) >= 6:
+                m_start = None
+                for prefix_len in (6, 5, 4, 3):
+                    p_pat = r"\s+".join(escaped_words[:prefix_len])
+                    m_start = re.search(p_pat, marked_text, flags=re.IGNORECASE)
+                    if m_start:
+                        break
+
+                if m_start:
+                    m_end = None
+                    for suffix_len in (6, 5, 4, 3):
+                        s_pat = r"\s+".join(escaped_words[-suffix_len:])
+                        m_end = re.search(s_pat, marked_text, flags=re.IGNORECASE)
+                        if m_end and m_end.end() > m_start.start():
+                            break
+
+                    if m_end and m_end.end() > m_start.start():
+                        matched_span = marked_text[m_start.start():m_end.end()]
+                        marked_text = marked_text[:m_start.start()] + f"<mark>{matched_span}</mark>" + marked_text[m_end.end():]
+                        has_any_mark = True
+                        chosen_color = color_hex
+                        continue
+
+    # Limpiar posibles solapamientos de tags redundantes
+    if has_any_mark:
+        marked_text = re.sub(r"</mark>\s*<mark>", " ", marked_text)
+
+    return marked_text, has_any_mark, chosen_color
 
 
 def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
@@ -766,8 +819,8 @@ def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
             if not text_val or len(text_val) < 2:
                 continue
 
-            # Comprobar si el texto coincide con alguna anotación de subrayado/resaltado
-            is_hl, hl_col = _match_highlight(text_val, page_highlights)
+            # Inyectar marcas inline <mark>...</mark> únicamente alrededor de las frases subrayadas
+            marked_text_val, is_hl, hl_col = _inject_inline_marks(text_val, page_highlights)
 
             if elem_type == "heading":
                 current_section = sec_hint or text_val
@@ -798,7 +851,7 @@ def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
 
             seg = Segment(
                 id=seg_id,
-                original=text_val,
+                original=marked_text_val,
                 section=current_section,
                 subsection=current_subsection,
                 page=page_idx,
@@ -879,13 +932,20 @@ def extract_academic_docx(file_bytes: bytes) -> List[Segment]:
         else:
             para_num = 1
 
-        # Detección de texto resaltado o subrayado en runs de DOCX
-        is_highlighted_run = False
-        run_highlight_color = "#FFD54F"
+        # Detección de texto resaltado o subrayado en runs de DOCX a nivel de frase
+        has_any_mark = False
+        run_highlight_color = "#FEF08A"
+        marked_doc_text = text
         if hasattr(p, "runs") and p.runs:
+            run_parts = []
             for r in p.runs:
-                if r.font.highlight_color is not None or r.font.underline:
-                    is_highlighted_run = True
+                r_text = r.text
+                if not r_text:
+                    continue
+                is_r_marked = (r.font.highlight_color is not None or r.font.underline)
+                if is_r_marked:
+                    has_any_mark = True
+                    run_parts.append(f"<mark>{r_text}</mark>")
                     if r.font.highlight_color:
                         hl_name = str(r.font.highlight_color).upper()
                         if "YELLOW" in hl_name:
@@ -896,17 +956,21 @@ def extract_academic_docx(file_bytes: bytes) -> List[Segment]:
                             run_highlight_color = "#BAE6FD"
                         elif "PINK" in hl_name or "MAGENTA" in hl_name:
                             run_highlight_color = "#FBCFE8"
-                    break
+                else:
+                    run_parts.append(r_text)
+            if has_any_mark:
+                marked_doc_text = "".join(run_parts)
+                marked_doc_text = re.sub(r"</mark>\s*<mark>", " ", marked_doc_text)
 
         seg = Segment(
             id=seg_id,
-            original=text,
+            original=marked_doc_text,
             section=current_section,
             subsection=current_subsection,
             page=current_page,
             paragraph_num=para_num,
             element_type=elem_type,
-            is_marked=is_highlighted_run,
+            is_marked=has_any_mark,
             color=run_highlight_color,
         )
         segments.append(seg)
@@ -1016,14 +1080,39 @@ def export_txt(segments: List[Segment], enriched: bool = False) -> bytes:
     lines = []
     for s in segments:
         text = s.translated or s.original
+        clean_text = re.sub(r"</?mark>", "", text)
         if s.is_marked:
             lines.append(f"★ [SUBRAYADO EN EL ORIGINAL / CITACIÓN]")
-            lines.append(text)
+            lines.append(clean_text)
             if enriched:
                 lines.append(f"   ↳ [Procedencia: {s.provenance_label}]")
         else:
-            lines.append(text)
+            lines.append(clean_text)
     return "\n\n".join(lines).encode("utf-8")
+
+
+def _add_docx_tagged_runs(p, text: str, font_size_pt: float = 9.5, is_globally_marked: bool = False):
+    """Agrega texto a un párrafo DOCX resaltando en amarillo únicamente las frases dentro de <mark>...</mark>."""
+    if not text:
+        return
+    if "<mark>" in text:
+        parts = re.split(r"(</?mark>)", text)
+        in_mark = False
+        for part in parts:
+            if part == "<mark>":
+                in_mark = True
+            elif part == "</mark>":
+                in_mark = False
+            elif part:
+                run = p.add_run(part)
+                run.font.size = Pt(font_size_pt)
+                if in_mark:
+                    run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+    else:
+        run = p.add_run(text)
+        run.font.size = Pt(font_size_pt)
+        if is_globally_marked:
+            run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
 
 def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
@@ -1161,18 +1250,12 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
             p.paragraph_format.left_indent = Inches(0.3)
             p.paragraph_format.first_line_indent = Inches(-0.3)
             p.paragraph_format.space_after = Pt(3)
-            run = p.add_run(text)
-            run.font.size = Pt(8)
-            if s.is_marked:
-                run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+            _add_docx_tagged_runs(p, text, font_size_pt=8, is_globally_marked=(s.is_marked and "<mark>" not in text))
         else:
             p = doc.add_paragraph()
             p.paragraph_format.space_after = Pt(5)
             p.paragraph_format.line_spacing = 1.15
-            run = p.add_run(text)
-            run.font.size = Pt(9.5)
-            if s.is_marked:
-                run.font.highlight_color = WD_COLOR_INDEX.YELLOW
+            _add_docx_tagged_runs(p, text, font_size_pt=9.5, is_globally_marked=(s.is_marked and "<mark>" not in text))
 
         # Si está marcado y enriquecido, nota de procedencia
         if enriched and s.is_marked and elem_type != "heading":
@@ -1254,6 +1337,105 @@ def _draw_academic_line(c, text: str, x: float, y: float, font_name: str, font_s
             c.drawString(x, y, text)
     except Exception:
         c.drawString(x, y, text)
+
+
+def _split_tagged_words(text: str) -> List[Tuple[str, bool]]:
+    """Descompone texto con etiquetas <mark>...</mark> en palabras etiquetadas (palabra, es_resaltada)."""
+    tokens = re.split(r"(</?mark>)", text)
+    tagged_words = []
+    is_m = False
+    for tok in tokens:
+        if tok == "<mark>":
+            is_m = True
+        elif tok == "</mark>":
+            is_m = False
+        else:
+            for w in tok.split():
+                clean_w = re.sub(r"</?mark>", "", w)
+                if clean_w:
+                    tagged_words.append((clean_w, is_m))
+    return tagged_words
+
+
+def _wrap_tagged_lines(c, tagged_words: List[Tuple[str, bool]], font_name: str, font_size: float, target_width: float) -> List[List[Tuple[str, bool]]]:
+    """Ajusta palabras etiquetadas en líneas que se adaptan al ancho de columna objetivo."""
+    lines = []
+    curr_line = []
+    curr_w = 0.0
+    space_w = c.stringWidth(" ", font_name, font_size)
+
+    for word, m in tagged_words:
+        w_w = c.stringWidth(word, font_name, font_size)
+        needed = w_w if not curr_line else (space_w + w_w)
+        if curr_line and (curr_w + needed > target_width):
+            lines.append(curr_line)
+            curr_line = [(word, m)]
+            curr_w = w_w
+        else:
+            curr_line.append((word, m))
+            curr_w += needed
+    if curr_line:
+        lines.append(curr_line)
+    return lines
+
+
+def _draw_tagged_line(c, line: List[Tuple[str, bool]], x: float, y: float, font_name: str, font_size: float, target_width: float, is_last_line: bool = False, text_color: Tuple[float, float, float] = (0.08, 0.08, 0.10)):
+    """Dibuja una línea con justificación tipográfica y resaltado amarillo suave ÚNICAMENTE detrás de las palabras marcadas."""
+    if not line:
+        return
+    space_w = c.stringWidth(" ", font_name, font_size)
+    num_words = len(line)
+
+    if not is_last_line and num_words > 1:
+        total_word_w = sum(c.stringWidth(w, font_name, font_size) for w, _ in line)
+        standard_total = total_word_w + (num_words - 1) * space_w
+        extra = target_width - standard_total
+        if 0 < extra < (target_width * 0.22):
+            actual_space_w = space_w + (extra / (num_words - 1))
+        else:
+            actual_space_w = space_w
+    else:
+        actual_space_w = space_w
+
+    # Paso 1: Dibujar resaltado de fondo amarillo suave SOLO en los tramos marcados
+    curr_x = x
+    hl_spans = []
+    span_start = None
+    span_end = None
+
+    for word, is_m in line:
+        w_w = c.stringWidth(word, font_name, font_size)
+        word_start = curr_x
+        word_end = curr_x + w_w
+
+        if is_m:
+            if span_start is None:
+                span_start = word_start
+            span_end = word_end
+        else:
+            if span_start is not None:
+                hl_spans.append((span_start, span_end - span_start))
+                span_start = None
+                span_end = None
+
+        curr_x += w_w + actual_space_w
+
+    if span_start is not None:
+        hl_spans.append((span_start, span_end - span_start))
+
+    for hx, hw in hl_spans:
+        c.saveState()
+        c.setFillColorRGB(1.0, 0.94, 0.50)  # Amarillo fluorescente suave de marcador
+        c.rect(hx - 1, y - 2, hw + 2, font_size + 3.2, fill=1, stroke=0)
+        c.restoreState()
+
+    # Paso 2: Dibujar el texto
+    curr_x = x
+    c.setFont(font_name, font_size)
+    c.setFillColorRGB(*text_color)
+    for word, _ in line:
+        c.drawString(curr_x, y, word)
+        curr_x += c.stringWidth(word, font_name, font_size) + actual_space_w
 
 
 def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
@@ -1470,13 +1652,12 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
             space_after = 5.0
             text_color = (0.08, 0.08, 0.10)
 
-        avail_w = col_width - (10 if is_marked else 0)
-        lines = simpleSplit(text, font_name, font_size, avail_w)
-        if not lines:
-            continue
-
         # 1. Si es encabezado, asegurar que no quede huérfano al final de columna
         if elem_type == "heading":
+            clean_head = re.sub(r"</?mark>", "", text)
+            lines = simpleSplit(clean_head, font_name, font_size, col_width)
+            if not lines:
+                continue
             needed_heading_space = space_before + (len(lines) * leading) + (3 * 11.6) + space_after
             if curr_y - needed_heading_space < bottom_margin:
                 next_column_or_page()
@@ -1491,34 +1672,40 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
             curr_y -= space_after
             continue
 
-        # 2. Si es párrafo normal o referencia: flujo continuo línea a línea
-        curr_y -= space_before
-        for line_idx, line in enumerate(lines):
-            # Comprobar si cabe la línea en la columna actual
-            if curr_y - leading < bottom_margin:
-                next_column_or_page()
+        # 2. Párrafo normal o referencia con soporte de resaltado inline exacto
+        has_inline_mark = ("<mark>" in raw_text)
+        if has_inline_mark:
+            tagged_words = _split_tagged_words(raw_text)
+            wrapped_lines = _wrap_tagged_lines(c, tagged_words, font_name, font_size, col_width)
+            if not wrapped_lines:
+                continue
 
-            col_x = get_col_x(current_col)
+            curr_y -= space_before
+            for line_idx, line in enumerate(wrapped_lines):
+                if curr_y - leading < bottom_margin:
+                    next_column_or_page()
 
-            # Fondo y barra ámbar para párrafos marcados/subrayados
-            if is_marked:
-                c.saveState()
-                c.setFillColorRGB(1.0, 0.98, 0.90)  # Amarillo tenue
-                c.rect(col_x, curr_y - 2, col_width, leading, fill=1, stroke=0)
-                c.setFillColorRGB(0.92, 0.70, 0.12)  # Acento dorado
-                c.rect(col_x, curr_y - 2, 3, leading, fill=1, stroke=0)
-                c.restoreState()
+                col_x = get_col_x(current_col)
+                is_last = (line_idx == len(wrapped_lines) - 1)
+                _draw_tagged_line(c, line, col_x, curr_y, font_name, font_size, col_width, is_last_line=is_last, text_color=text_color)
+                curr_y -= leading
+        else:
+            clean_plain = re.sub(r"</?mark>", "", text)
+            lines = simpleSplit(clean_plain, font_name, font_size, col_width)
+            if not lines:
+                continue
 
-            c.setFont(font_name, font_size)
-            c.setFillColorRGB(*text_color)
+            curr_y -= space_before
+            for line_idx, line in enumerate(lines):
+                if curr_y - leading < bottom_margin:
+                    next_column_or_page()
 
-            line_x = col_x + (7 if is_marked else 0)
-            target_line_w = col_width - (7 if is_marked else 0)
-            is_last = (line_idx == len(lines) - 1)
-
-            # Dibujar línea con justificación
-            _draw_academic_line(c, line, line_x, curr_y, font_name, font_size, target_line_w, is_last_line=is_last)
-            curr_y -= leading
+                col_x = get_col_x(current_col)
+                c.setFont(font_name, font_size)
+                c.setFillColorRGB(*text_color)
+                is_last = (line_idx == len(lines) - 1)
+                _draw_academic_line(c, line, col_x, curr_y, font_name, font_size, col_width, is_last_line=is_last)
+                curr_y -= leading
 
         # Nota de procedencia solo si el párrafo está marcado y es enriquecido
         if show_provenance:
@@ -1528,7 +1715,7 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
             col_x = get_col_x(current_col)
             c.setFont("Helvetica-Oblique", 7.2)
             c.setFillColorRGB(0.26, 0.22, 0.75)  # Índigo académico
-            c.drawString(col_x + 7, curr_y, f"[📌 Origen: {s.provenance_label}]")
+            c.drawString(col_x, curr_y, f"[📌 Origen: {s.provenance_label}]")
             curr_y -= prov_leading + 2
 
         curr_y -= space_after

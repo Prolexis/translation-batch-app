@@ -737,14 +737,21 @@ st.markdown("""
     }
 
     .paper-sheet-p-marked {
-        color: var(--marked-card-text);
-        background: var(--marked-card-bg);
-        border-left: 3px solid var(--marked-card-border);
-        padding: 6px 10px;
-        border-radius: 4px;
+        color: var(--paper-text);
         font-size: 0.86rem;
         line-height: 1.6;
         margin-bottom: 10px;
+        text-indent: 14px;
+        text-align: justify;
+    }
+
+    .academic-inline-highlight {
+        background-color: #FEF08A !important;
+        color: #0F172A !important;
+        padding: 1px 4px;
+        border-radius: 3px;
+        box-decoration-break: clone;
+        -webkit-box-decoration-break: clone;
         font-weight: 500;
     }
 
@@ -1310,8 +1317,7 @@ if active_context and active_context.get("segments"):
                     paper_sheet_html.append(f'<div class="paper-sheet-formula">{html.escape(text_val)}</div>')
                 else:
                     c_txt = highlight_citations_html(text_val, is_marked=s.is_marked)
-                    p_class = "paper-sheet-p-marked" if s.is_marked else "paper-sheet-p"
-                    paper_sheet_html.append(f'<p class="{p_class}">{c_txt}</p>')
+                    paper_sheet_html.append(f'<p class="paper-sheet-p">{c_txt}</p>')
 
             paper_sheet_html.append('</div>')
 

@@ -75,6 +75,7 @@ class TranslatorAgent:
             "3. CROSS-REFERENCES: Preserve cross-reference labels accurately ('Figure 1' -> 'Figura 1', 'Table 2' -> 'Tabla 2', 'Eq. (3)' -> 'Ec. (3)').\n"
             "4. MATHEMATICS & FORMULAS: Preserve mathematical variables ($k$, $\\tau_l$, $\\delta_p$, $M_o$, etc.) and formulas. Repair broken ligature characters (such as 'signi■cantly' -> 'significativamente' or 'tupla ■S, s0■' -> '<S, s0>').\n"
             "5. DELIMITERS: CRITICAL REQUIREMENT: You MUST prepend each translated paragraph with its exact marker [P_{{id}}], followed by the translated text on a new line.\n"
+            "6. HIGHLIGHTED / UNDERLINED SPANS: If any sentence, phrase, or term in the source text is enclosed in <mark>...</mark>, you MUST PRESERVE the <mark>...</mark> tags strictly around the exact corresponding translated phrase in the target language. Do NOT mark words that were not inside <mark>...</mark>. Do NOT omit the <mark>...</mark> tags.\n\n"
             "Do not omit any [P_{{id}}] marker. Return ONLY the marked translated paragraphs without any extra conversational filler.\n\n"
             "Example format:\n"
             "[P_0]\n"
@@ -93,6 +94,7 @@ class TranslatorAgent:
             "You are an expert academic translator specializing in scholarly papers.\n"
             "Translate the source text accurately into {target_name}.\n"
             "Preserve in-text citations [1], (Author, Year), equations, and formal terminology.\n"
+            "If any text is enclosed in <mark>...</mark>, you MUST PRESERVE the <mark>...</mark> tags strictly around the corresponding translated words.\n"
             "Return ONLY the direct translation."
         )
         if retry_reason:
