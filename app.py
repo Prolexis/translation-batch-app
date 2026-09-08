@@ -31,6 +31,7 @@ import logging
 from typing import List, Set, Optional, Dict, Any, Tuple
 
 import streamlit as st
+import streamlit.components.v1 as components
 
 # Configuración de logging
 logging.basicConfig(level=logging.INFO)
@@ -55,6 +56,7 @@ except Exception as _import_exc:
     st.stop()
 
 from utils.colors import color_for_index, render_highlighted_html
+from utils.pdf_viewer import get_pdf_js_viewer_html
 from agents.orchestrator import TranslationOrchestrator
 
 # Configuración de página en Streamlit
@@ -1186,13 +1188,9 @@ if active_context and active_context.get("segments"):
 
         if p_mode.startswith("📑 Visor PDF"):
             st.caption("Visualiza el PDF generado directamente en tu navegador con maquetación de dos columnas, encabezados y abstract:")
-            pdf_embed_html = (
-                f'<iframe src="data:application/pdf;base64,{b64_pdf}#toolbar=1&navpanes=0" '
-                f'width="100%" height="680px" '
-                f'style="border-radius:10px; border:1px solid var(--paper-sheet-border); box-shadow: 0 10px 30px rgba(0,0,0,0.15); background:var(--paper-sheet-bg);">'
-                f'</iframe>'
-            )
-            st.markdown(pdf_embed_html, unsafe_allow_html=True)
+            pdf_fname = f"{active_fname.rsplit('.', 1)[0]}_traducido.pdf"
+            viewer_html = get_pdf_js_viewer_html(b64_pdf, filename=pdf_fname)
+            components.html(viewer_html, height=720, scrolling=False)
         else:
             # Hoja de Paper Científico (Simulador de Paper Real en HTML/CSS adaptable)
             st.caption("Previsualización estructurada fiel a formato IEEE / revista académica con 2 columnas reales, título, autores, abstract y citas:")
