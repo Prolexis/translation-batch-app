@@ -12,6 +12,7 @@ Lectura, extracción estructurada académica y exportación de documentos
 
 import io
 import re
+import unicodedata
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
@@ -115,10 +116,170 @@ class Segment:
         return f"Pág. {self.page} · P{self.paragraph_num} ({sec})"
 
 
+def repair_academic_symbols_and_ligatures(text: str) -> str:
+    """Repara caracteres corruptos de PDF, ligaduras rotas, caracteres de dibujo de cajas y símbolos matemáticos."""
+    if not text:
+        return ""
+
+    # 1. Ligaduras tipográficas estándar Unicode y caracteres invisibles/dañados
+    ligatures = {
+        "\ufb00": "ff", "\ufb01": "fi", "\ufb02": "fl", "\ufb03": "ffi", "\ufb04": "ffl",
+        "\ufb05": "ft", "\ufb06": "st", "\xad": "", "\u200b": "", "\ufffd": "", "\ufeff": ""
+    }
+    for k, v in ligatures.items():
+        text = text.replace(k, v)
+
+    # 2. Reparar palabras cortadas por salto de línea con guión tipográfico
+    text = re.sub(r'(\b[A-Za-z]+)-\s*\n\s*([a-z]+)', r'\1\2', text)
+
+    # 3. Corregir palabras típicas donde la ligadura 'fi'/'fl'/'ff' se extrajo como '■' o ''
+    word_rep = [
+        (r'\bsigni[■\ufffd]cantly\b', 'significantly'),
+        (r'\bsigni[■\ufffd]cant\b', 'significant'),
+        (r'\bveri[■\ufffd]cation\b', 'verification'),
+        (r'\bveri[■\ufffd]caci[oó]n\b', 'verificación'),
+        (r'\bOf[■\ufffd]ce\b', 'Office'),
+        (r'\b[■\ufffd]nish\b', 'finish'),
+        (r'\b[■\ufffd]nalizar\b', 'finalizar'),
+        (r'\bde[■\ufffd]ne\b', 'define'),
+        (r'\bde[■\ufffd]ned\b', 'defined'),
+        (r'\bde[■\ufffd]nici[oó]n\b', 'definición'),
+        (r'\bbene[■\ufffd]cio\b', 'beneficio'),
+        (r'\be[■\ufffd]ciente\b', 'eficiente'),
+        (r'\be[■\ufffd]cacia\b', 'eficacia'),
+        (r'\bspeci[■\ufffd]c\b', 'specific'),
+        (r'\bclasi[■\ufffd]caci[oó]n\b', 'clasificación'),
+        (r'\bmodi[■\ufffd]caci[oó]n\b', 'modificación'),
+        (r'\bidenti[■\ufffd]caci[oó]n\b', 'identificación'),
+        (r'\bcon[■\ufffd]anza\b', 'confianza'),
+        (r'\bcon[■\ufffd]guraci[oó]n\b', 'configuración'),
+        (r'\bin[■\ufffd]uencia\b', 'influencia'),
+        (r'\bin[■\ufffd]ujo\b', 'influjo'),
+        (r'\bpro[■\ufffd]le\b', 'profile'),
+        (r'\bdif[■\ufffd]cultad\b', 'dificultad'),
+        (r'\baf[■\ufffd]liaci[oó]n\b', 'afiliación'),
+        (r'\baf[■\ufffd]liaciones\b', 'afiliaciones'),
+        (r'\bsuf[■\ufffd]ciente\b', 'suficiente'),
+        (r'\bsuf[■\ufffd]cient\b', 'sufficient'),
+        (r'\bcon[■\ufffd]icto\b', 'conflicto'),
+        (r'\bcon[■\ufffd]ict\b', 'conflict'),
+        (r'\bperfor[■\ufffd]', 'perfor-'),
+        (r'\bsigni[■\ufffd]', 'signifi-'),
+    ]
+    for pat, rep in word_rep:
+        text = re.sub(pat, rep, text, flags=re.I)
+
+    # 4. Reemplazo de ligaduras genéricas residuales entre letras: ej. 'bene■cio' -> 'beneficio'
+    text = re.sub(r'([A-Za-z])[■\ufffd]([a-z]{2,})', r'\1fi\2', text)
+
+    # 5. Brackets y tuplas matemáticas (en IEEE se codifican \langle y \rangle que extraen como '■')
+    text = re.sub(r'(?<=[=\s,:(])■(?=[A-Za-z0-9\\$])', '<', text)
+    text = re.sub(r'(?<=[A-Za-z0-9\\$\)\]])■(?=[\s,.:;—\-\)]|$)', '>', text)
+    text = re.sub(r'■\s*p\b', '|= p', text)
+
+    # 6. Limpiar artefactos de dibujo de corchetes gigantes ASCII/Unicode (piezas de llave de ecuaciones)
+    text = re.sub(r'[\u23a1-\u23b9\u2500-\u257f]+', ' ', text)
+
+    # 7. Cualquier '■' remanente aislado se convierte en guión o espacio
+    text = text.replace('■', '-')
+    return text
+
+
+def clean_math_display(text: str) -> str:
+    """Convierte código LaTeX sin compilar y fórmulas en texto limpio y legible para visualización y PDF."""
+    if not text:
+        return ""
+
+    # Casos por partes \begin{cases} ... \end{cases}
+    def _cases_sub(m):
+        content = m.group(1)
+        raw_parts = [p.strip() for p in re.split(r'\\\\', content) if p.strip()]
+        cleaned_parts = []
+        for p in raw_parts:
+            cp = re.sub(r'\s*&\s*', ' si ', p)
+            cleaned_parts.append(cp)
+        return '{ ' + ' ; '.join(cleaned_parts) + ' }'
+
+    text = re.sub(r'\\begin\{cases\}([\s\S]*?)\\end\{cases\}', _cases_sub, text)
+    # Fracciones: \frac{A}{B} -> (A)/(B)
+    text = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1)/(\2)', text)
+    text = re.sub(r'\\frac\{([^{}]+)\}\{([^{}]+)\}', r'(\1)/(\2)', text)
+
+    # Brackets y símbolos matemáticos comunes
+    text = text.replace(r'\langle', '<').replace(r'\rangle', '>')
+    text = text.replace(r'\cdot', '*').replace(r'\times', 'x')
+    text = text.replace(r'\leq', '<=').replace(r'\geq', '>=')
+    text = text.replace(r'\neq', '!=').replace(r'\approx', '~')
+    text = text.replace(r'\in', ' in ').replace(r'\notin', ' not in ')
+    text = text.replace(r'\mathbb{N}', 'N').replace(r'\mathbb{R}', 'R')
+    text = text.replace(r'\perp', '[falso]').replace(r'\top', '[verdadero]')
+    text = text.replace(r'\triangle', '//')
+    text = text.replace(r'\leftarrow', '<-').replace(r'\rightarrow', '->').replace(r'\to', '->')
+    text = text.replace(r'\max', 'max').replace(r'\min', 'min').replace(r'\arg', 'arg')
+    text = text.replace(r'\sum', 'sum').replace(r'\prod', 'prod')
+    text = text.replace(r'\dots', '...').replace(r'\cdots', '...')
+
+    text = re.sub(r'\\text\{([^{}]+)\}', r'\1', text)
+    text = re.sub(r'\\mathrm\{([^{}]+)\}', r'\1', text)
+    text = re.sub(r'\\mathbf\{([^{}]+)\}', r'\1', text)
+
+    # Letras griegas LaTeX
+    greek_latex = {
+        r'\alpha': 'alpha', r'\beta': 'beta', r'\gamma': 'gamma', r'\delta': 'delta',
+        r'\epsilon': 'epsilon', r'\varepsilon': 'epsilon', r'\zeta': 'zeta', r'\eta': 'eta',
+        r'\theta': 'theta', r'\iota': 'iota', r'\kappa': 'kappa', r'\lambda': 'lambda',
+        r'\mu': 'mu', r'\nu': 'nu', r'\xi': 'xi', r'\pi': 'pi', r'\rho': 'rho',
+        r'\sigma': 'sigma', r'\tau': 'tau', r'\upsilon': 'upsilon', r'\phi': 'phi',
+        r'\chi': 'chi', r'\psi': 'psi', r'\omega': 'omega',
+        r'\Gamma': 'Gamma', r'\Delta': 'Delta', r'\Theta': 'Theta', r'\Lambda': 'Lambda',
+        r'\Xi': 'Xi', r'\Pi': 'Pi', r'\Sigma': 'Sigma', r'\Phi': 'Phi',
+        r'\Psi': 'Psi', r'\Omega': 'Omega'
+    }
+    for g_cmd, g_val in greek_latex.items():
+        text = re.sub(re.escape(g_cmd) + r'(?![a-zA-Z])', g_val, text)
+
+    text = re.sub(r'_\{([^{}]+)\}', r'_\1', text)
+    text = re.sub(r'\^\{([^{}]+)\}', r'^\1', text)
+    text = text.replace('$', '')
+    return text
+
+
+def _is_running_header_or_footer(line: str) -> bool:
+    """Filtra líneas de encabezado editorial, volúmenes de revista, números de página y avisos legales."""
+    clean = line.strip()
+    if not clean:
+        return True
+    # 1. Indicadores de volumen y año IEEE (ej. "VOLUME 9, 2021 102717", "VOLUMEN 9, 2021")
+    if re.search(r'\b(?:VOLUME|VOLUMEN)\s+\d+(?:,\s*\d{4})?(?:\s+\d+)?\b', clean, re.I):
+        return True
+    if re.search(r'^\d{5,8}\s+(?:VOLUME|VOLUMEN)\b', clean, re.I):
+        return True
+    if re.search(r'^(?:WORKLOAD\s+)?(?:VOLUME|VOLUMEN)\s+\d+', clean, re.I):
+        return True
+    # 2. Avisos editoriales, licencias y copyright
+    if re.search(r'(?:associate editor coordinating|approving it for publication|creative commons attribution|licensed under a creative commons|this work is licensed|date of current version|digital object identifier|all rights reserved)', clean, re.I):
+        return True
+    if re.search(r'^(?:See\s+https?://|https?://creativecommons\.org)', clean, re.I):
+        return True
+    # 3. Encabezados repetidos de página con título truncado
+    if re.search(r'^(?:MODELADO|SURVEY|IEEE\s+ACCESS|PROCEEDINGS|TRANSACTIONS|REVISTA).*P[aá]g\.?\s*\d+$', clean, re.I):
+        return True
+    # 4. Marcadores de página aislados
+    if re.search(r'^(?:—|-|–)\s*P[aá]gina\s*\d+\s*(?:—|-|–)$', clean, re.I):
+        return True
+    if re.search(r'^(?:Page|Página|Pág\.)\s*\d+(?:\s*(?:of|de)\s*\d+)?$', clean, re.I):
+        return True
+    # 5. Números de artículo IEEE aislados (ej. 102716)
+    if re.match(r'^\d{5,8}$', clean):
+        return True
+    return False
+
+
 def _clean_text(text: str) -> str:
     if not text:
         return ""
     text = text.replace("\r\n", "\n").replace("\r", "\n")
+    text = repair_academic_symbols_and_ligatures(text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
@@ -148,6 +309,10 @@ def highlight_citations_html(text: str, is_marked: bool = False) -> str:
     """Resalta visualmente con color las citas in-text [1] y autor-año (Author, Year) adaptables a modo claro y oscuro."""
     if not text:
         return ""
+    # Reparar ligaduras y limpiar expresiones matemáticas para lectura fluida
+    text = repair_academic_symbols_and_ligatures(text)
+    text = clean_math_display(text)
+
     import html as _html
     safe = _html.escape(text)
 
@@ -460,7 +625,9 @@ def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
         lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
         filtered_lines = [
             l for l in lines
-            if l not in repeated_headers and not re.match(r"^(?:page\s+\d+(?:\s+of\s+\d+)?|\d+|\d+\s*/\s*\d+)$", l, re.I)
+            if not _is_running_header_or_footer(l)
+            and l not in repeated_headers
+            and not re.match(r"^(?:page\s+\d+(?:\s+of\s+\d+)?|\d+|\d+\s*/\s*\d+)$", l, re.I)
         ]
 
         if not filtered_lines:
@@ -873,39 +1040,87 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
 
 
 def _clean_pdf_text(text: str) -> str:
-    """Sanitiza caracteres tipográficos especiales para compatibilidad con fuentes estándar de ReportLab."""
+    """Sanitiza caracteres tipográficos especiales, matemáticas y ligaduras para compatibilidad total con fuentes estándar de ReportLab."""
     if not text:
         return ""
-    replacements = {
-        "\u2018": "'", "\u2019": "'",
-        "\u201c": '"', "\u201d": '"',
-        "\u2013": " - ", "\u2014": " — ",
-        "\u2026": "...",
-        "\xa0": " ",
-        "\u2264": "<=", "\u2265": ">=",
-        "\u2260": "!=", "\u00d7": "x",
+    text = repair_academic_symbols_and_ligatures(text)
+    text = clean_math_display(text)
+
+    char_map = {
+        "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u201b": "'",
+        "\u201c": '"', "\u201d": '"', "\u201e": '"', "\u201f": '"',
+        "\u2010": "-", "\u2011": "-", "\u2012": "-", "\u2013": " - ", "\u2014": " -- ", "\u2015": " -- ",
+        "\u2026": "...", "\xa0": " ", "\u202f": " ",
+        "\u2264": "<=", "\u2265": ">=", "\u2260": "!=", "\u2248": "~", "\u00d7": "x", "\u00f7": "/",
+        "\u2208": " in ", "\u2209": " not in ", "\u2211": "sum ", "\u220f": "prod ",
+        "\u221e": "inf", "\u2192": "->", "\u2190": "<-", "\u2194": "<->",
+        "\u27e8": "<", "\u27e9": ">", "\u3008": "<", "\u3009": ">",
+        "\u22c5": "*", "\u22c6": "*", "\u223c": "~",
+        "\u22a8": "|=", "\u25a0": "-", "\u25a1": "-", "\ufffd": "",
+        # Letras griegas a representación legible estándar
+        "α": "alpha", "β": "beta", "γ": "gamma", "δ": "delta", "ε": "epsilon", "ζ": "zeta", "η": "eta",
+        "θ": "theta", "ι": "iota", "κ": "kappa", "λ": "lambda", "μ": "mu", "ν": "nu", "ξ": "xi",
+        "π": "pi", "ρ": "rho", "σ": "sigma", "τ": "tau", "υ": "upsilon", "φ": "phi", "χ": "chi",
+        "ψ": "psi", "ω": "omega",
+        "Α": "Alpha", "Β": "Beta", "Γ": "Gamma", "Δ": "Delta", "Ε": "Epsilon", "Ζ": "Zeta", "Η": "Eta",
+        "Θ": "Theta", "Ι": "Iota", "Κ": "Kappa", "Λ": "Lambda", "Μ": "Mu", "Ν": "Nu", "Ξ": "Xi",
+        "Π": "Pi", "Ρ": "Rho", "Σ": "Sigma", "Τ": "Tau", "Υ": "Upsilon", "Φ": "Phi", "Χ": "Chi",
+        "Ψ": "Psi", "Ω": "Omega"
     }
-    for k, v in replacements.items():
+    for k, v in char_map.items():
         text = text.replace(k, v)
-    return text.strip()
+
+    # Filtrar caracteres con ord > 255 que provocarían errores en ReportLab Helvetica
+    sanitized = []
+    for ch in text:
+        if ord(ch) <= 255:
+            sanitized.append(ch)
+        else:
+            norm = unicodedata.normalize('NFKD', ch)
+            norm_latin = "".join(c for c in norm if ord(c) <= 255)
+            sanitized.append(norm_latin if norm_latin else " ")
+    return "".join(sanitized).strip()
+
+
+def _draw_academic_line(c, text: str, x: float, y: float, font_name: str, font_size: float, target_width: float, is_last_line: bool = False):
+    """Dibuja una línea de texto con justificación automática si no es la última línea del párrafo."""
+    words = text.split()
+    if is_last_line or len(words) <= 1:
+        c.drawString(x, y, text)
+        return
+
+    try:
+        text_width = c.stringWidth(text, font_name, font_size)
+        extra_space = target_width - text_width
+        # Si el espacio extra es moderado (menos del 22% del ancho), justificar usando setWordSpace
+        if 0 < extra_space < (target_width * 0.22):
+            word_space = extra_space / (len(words) - 1)
+            t = c.beginText(x, y)
+            t.setFont(font_name, font_size)
+            t.setWordSpace(word_space)
+            t.textLine(text)
+            c.drawText(t)
+        else:
+            c.drawString(x, y, text)
+    except Exception:
+        c.drawString(x, y, text)
 
 
 def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     """
-    Exporta a .PDF en formato académico de DOS COLUMNAS (estilo IEEE / revista científica):
-      - Encabezado institucional / revista científica en la parte superior
-      - Título del paper centrado a ancho completo con tipografía destacada
+    Exporta a .PDF en formato académico de DOS COLUMNAS balanceadas (estilo IEEE / revista científica):
+      - Encabezado institucional en la parte superior
+      - Título centrado a ancho completo con tipografía destacada
+      - Autores y afiliaciones bien separados
       - Abstract / Resumen en caja sombreada a ancho completo
       - Línea divisoria decorativa
-      - Cuerpo del documento estructurado en DOS COLUMNAS con flujo balanceado
-      - Encabezados de sección (I. Introducción, etc.) y subsecciones estilizadas
-      - Citas in-text integradas
-      - Párrafos marcados con fondo amarillo suave (#FEF9C3) y nota de origen al pie
-      - Referencias en dos columnas con tipografía compacta
-      - Encabezado y número de página continuo en el pie de página
+      - Flujo continuo línea por línea en DOS COLUMNAS (evita saltos vacíos y desalineaciones)
+      - Encabezados vinculados a su texto (evita encabezados huérfanos)
+      - Citas y fórmulas matemáticas higienizadas y legibles
+      - Párrafos marcados con barra ámbar lateral, fondo suave y trazabilidad de origen
+      - Encabezados y números de página continuos en cada hoja
     """
     if not REPORTLAB_AVAILABLE:
-        # Fallback si reportlab no está disponible en el entorno
         return export_txt(segments, enriched=enriched)
 
     buf = io.BytesIO()
@@ -917,8 +1132,7 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     col_width = (width - 2 * margin - col_gap) / 2
     bottom_margin = 42.0
 
-    # Separar Título, Abstract y Cuerpo
-    # Separar Título, Autores, Afiliaciones, Abstract y Cuerpo
+    # Separar Componentes Estructurales de Portada
     metadata_segs = [s for s in segments if s.element_type == "metadata"]
     title_segs = [s for s in segments if s.element_type == "title"]
     authors_segs = [s for s in segments if s.element_type == "authors"]
@@ -942,7 +1156,7 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     keywords_text = _clean_pdf_text(" ".join((s.translated or s.original) for s in keywords_segs)) if keywords_segs else ""
 
     # --------------------------------------------------------------------------
-    # PÁGINA 1: Encabezado superior, Título y Caja de Abstract
+    # PÁGINA 1: Encabezado superior, Título y Abstract
     # --------------------------------------------------------------------------
     # 1. Banner superior
     c.setFont("Helvetica-Bold", 7.0)
@@ -990,7 +1204,7 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
         abs_full = "RESUMEN — " + clean_abs
         c.setFont("Helvetica-Oblique", 8.2)
         abs_lines = simpleSplit(abs_full, "Helvetica-Oblique", 8.2, width - 2 * margin - 22)
-        
+
         kw_lines = []
         if keywords_text:
             clean_kw = re.sub(r"^(?:index terms|keywords|palabras clave)\s*[\:\—\-\.]*\s*", "", keywords_text, flags=re.I)
@@ -1000,14 +1214,12 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
         box_padding = 8
         abs_box_height = (len(abs_lines) * 11.0) + (len(kw_lines) * 10.2 + 4 if kw_lines else 0) + (2 * box_padding)
 
-        # Fondo sombreado suave con borde tenue
         c.saveState()
         c.setFillColorRGB(0.96, 0.97, 0.99)
         c.setStrokeColorRGB(0.80, 0.84, 0.90)
         c.roundRect(margin, y - abs_box_height, width - 2 * margin, abs_box_height, 4, fill=1, stroke=1)
         c.restoreState()
 
-        # Texto del Abstract
         y_abs = y - box_padding - 8
         c.setFillColorRGB(0.12, 0.14, 0.20)
         for al in abs_lines:
@@ -1033,15 +1245,17 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
     y -= 14
 
     # --------------------------------------------------------------------------
-    # FLUJO DE DOS COLUMNAS PARA EL CUERPO Y REFERENCIAS
+    # FLUJO CONTINUO LÍNEA POR LÍNEA EN DOS COLUMNAS
     # --------------------------------------------------------------------------
     col_top_y_p1 = y
     page_num = 1
     current_col = 0  # 0: izquierda, 1: derecha
     curr_y = col_top_y_p1
 
+    def get_col_x(col_idx: int) -> float:
+        return margin if col_idx == 0 else (margin + col_width + col_gap)
+
     def draw_running_header_footer(pg: int):
-        """Dibuja encabezado y pie de página."""
         c.setFont("Helvetica", 7.5)
         c.setFillColorRGB(0.42, 0.46, 0.54)
         if pg > 1:
@@ -1051,13 +1265,28 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
             c.setStrokeColorRGB(0.82, 0.85, 0.90)
             c.setLineWidth(0.5)
             c.line(margin, height - 28, width - margin, height - 28)
-        # Pie de página
         c.drawCentredString(width / 2, 22, f"— Página {pg} —")
+
+    def next_column_or_page():
+        nonlocal current_col, curr_y, page_num
+        if current_col == 0:
+            current_col = 1
+            curr_y = col_top_y_p1 if page_num == 1 else (height - margin - 22)
+        else:
+            c.showPage()
+            page_num += 1
+            draw_running_header_footer(page_num)
+            current_col = 0
+            curr_y = height - margin - 22
 
     draw_running_header_footer(1)
 
     for s in body_segs:
-        text = s.translated or s.original
+        raw_text = s.translated or s.original
+        text = _clean_pdf_text(raw_text)
+        if not text:
+            continue
+
         elem_type = s.element_type
         is_marked = (enriched and s.is_marked)
 
@@ -1090,49 +1319,61 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
         if not lines:
             continue
 
-        prov_leading = 9.5
-        needed_height = space_before + (len(lines) * leading) + (prov_leading + 8 if is_marked else 0) + space_after
+        # 1. Si es encabezado, asegurar que no quede huérfano al final de columna
+        if elem_type == "heading":
+            needed_heading_space = space_before + (len(lines) * leading) + (3 * 11.6) + space_after
+            if curr_y - needed_heading_space < bottom_margin:
+                next_column_or_page()
 
-        # Comprobar si cabe en la columna actual
-        if curr_y - needed_height < bottom_margin:
-            if current_col == 0:
-                # Pasar a la columna derecha en la misma página
-                current_col = 1
-                curr_y = col_top_y_p1 if page_num == 1 else (height - margin - 18)
-            else:
-                # Saltar de página
-                c.showPage()
-                page_num += 1
-                draw_running_header_footer(page_num)
-                current_col = 0
-                curr_y = height - margin - 18
+            curr_y -= space_before
+            col_x = get_col_x(current_col)
+            c.setFont(font_name, font_size)
+            c.setFillColorRGB(*text_color)
+            for hl in lines:
+                c.drawString(col_x, curr_y, hl)
+                curr_y -= leading
+            curr_y -= space_after
+            continue
 
-        col_x = margin if current_col == 0 else (margin + col_width + col_gap)
+        # 2. Si es párrafo normal o referencia: flujo continuo línea a línea
         curr_y -= space_before
+        for line_idx, line in enumerate(lines):
+            # Comprobar si cabe la línea en la columna actual
+            if curr_y - leading < bottom_margin:
+                next_column_or_page()
 
-        # Resaltado visual si el párrafo fue marcado por el usuario
-        if is_marked:
-            c.saveState()
-            c.setFillColorRGB(1.0, 0.96, 0.78)  # Amarillo suave #FFF4C6
-            c.setStrokeColorRGB(0.92, 0.70, 0.12)  # Borde ámbar #EAB308
-            box_h = (len(lines) * leading) + prov_leading + 10
-            c.roundRect(col_x - 3, curr_y - box_h + leading, col_width + 6, box_h, 3, fill=1, stroke=1)
-            c.restoreState()
+            col_x = get_col_x(current_col)
 
-        # Dibujar líneas del párrafo
-        c.setFont(font_name, font_size)
-        c.setFillColorRGB(*text_color)
-        for line in lines:
-            c.drawString(col_x + (4 if is_marked else 0), curr_y, line)
+            # Fondo y barra ámbar para párrafos marcados
+            if is_marked:
+                c.saveState()
+                c.setFillColorRGB(1.0, 0.98, 0.90)  # Amarillo tenue
+                c.rect(col_x, curr_y - 2, col_width, leading, fill=1, stroke=0)
+                c.setFillColorRGB(0.92, 0.70, 0.12)  # Acento dorado
+                c.rect(col_x, curr_y - 2, 3, leading, fill=1, stroke=0)
+                c.restoreState()
+
+            c.setFont(font_name, font_size)
+            c.setFillColorRGB(*text_color)
+
+            line_x = col_x + (7 if is_marked else 0)
+            target_line_w = col_width - (7 if is_marked else 0)
+            is_last = (line_idx == len(lines) - 1)
+
+            # Dibujar línea con justificación
+            _draw_academic_line(c, line, line_x, curr_y, font_name, font_size, target_line_w, is_last_line=is_last)
             curr_y -= leading
 
-        # Dibujar nota de procedencia exacta al pie del párrafo marcado
+        # Nota de procedencia si el párrafo está marcado
         if is_marked:
-            curr_y -= 1
+            prov_leading = 9.5
+            if curr_y - prov_leading < bottom_margin:
+                next_column_or_page()
+            col_x = get_col_x(current_col)
             c.setFont("Helvetica-Oblique", 7.2)
             c.setFillColorRGB(0.26, 0.22, 0.75)  # Índigo académico
-            c.drawString(col_x + 5, curr_y, f"[📌 Origen: {s.provenance_label}]")
-            curr_y -= prov_leading + 3
+            c.drawString(col_x + 7, curr_y, f"[📌 Origen: {s.provenance_label}]")
+            curr_y -= prov_leading + 2
 
         curr_y -= space_after
 

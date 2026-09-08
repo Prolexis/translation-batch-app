@@ -23,7 +23,7 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from config import settings
-from utils.file_handlers import Segment
+from utils.file_handlers import Segment, repair_academic_symbols_and_ligatures, clean_math_display
 from utils.rate_limiter import with_backoff
 
 logger = logging.getLogger("translation_app.translator")
@@ -73,7 +73,8 @@ class TranslatorAgent:
             "1. TERMINOLOGY: Use formal academic vocabulary in Spanish (e.g., 'mecanismo de atención', 'aprendizaje profundo', 'conjunto de datos', 'red neuronal').\n"
             "2. CITATIONS: Absolutely PRESERVE all in-text citations exactly as written, including bracket citations [1], [2, 3] and author-year citations (Smith et al., 2020). NEVER alter or remove citation markers.\n"
             "3. CROSS-REFERENCES: Preserve cross-reference labels accurately ('Figure 1' -> 'Figura 1', 'Table 2' -> 'Tabla 2', 'Eq. (3)' -> 'Ec. (3)').\n"
-            "4. DELIMITERS: CRITICAL REQUIREMENT: You MUST prepend each translated paragraph with its exact marker [P_{{id}}], followed by the translated text on a new line.\n"
+            "4. MATHEMATICS & FORMULAS: Preserve mathematical variables ($k$, $\\tau_l$, $\\delta_p$, $M_o$, etc.) and formulas. Repair broken ligature characters (such as 'signi■cantly' -> 'significativamente' or 'tupla ■S, s0■' -> '<S, s0>').\n"
+            "5. DELIMITERS: CRITICAL REQUIREMENT: You MUST prepend each translated paragraph with its exact marker [P_{{id}}], followed by the translated text on a new line.\n"
             "Do not omit any [P_{{id}}] marker. Return ONLY the marked translated paragraphs without any extra conversational filler.\n\n"
             "Example format:\n"
             "[P_0]\n"
@@ -134,21 +135,26 @@ class TranslatorAgent:
                 seg_text = blocks[i + 1].strip()
                 parsed_dict[seg_id] = seg_text
 
+            def _sanitize_trans(txt: str) -> str:
+                if not txt:
+                    return ""
+                return clean_math_display(repair_academic_symbols_and_ligatures(txt.strip()))
+
             for seg in batch:
                 if str(seg.id) in parsed_dict and parsed_dict[str(seg.id)]:
-                    seg.translated = parsed_dict[str(seg.id)]
+                    seg.translated = _sanitize_trans(parsed_dict[str(seg.id)])
                     seg.status = "traducido"
                 else:
                     # Fallback individual para este segmento específico si el tag faltó
                     logger.warning("[Translator] Segmento %d no encontrado en respuesta de lote, traduciendo individualmente", seg.id)
-                    seg.translated = self._translate_one(seg.original, source_name, target_name)
+                    seg.translated = _sanitize_trans(self._translate_one(seg.original, source_name, target_name))
                     seg.status = "traducido"
 
         except Exception as exc:  # noqa: BLE001
             logger.error("[Translator] Fallo en lote de %d segmentos: %s. Aplicando fallback individual...", len(batch), exc)
             for seg in batch:
                 try:
-                    seg.translated = self._translate_one(seg.original, source_name, target_name)
+                    seg.translated = clean_math_display(repair_academic_symbols_and_ligatures(self._translate_one(seg.original, source_name, target_name)))
                     seg.status = "traducido"
                 except Exception as inner_exc:  # noqa: BLE001
                     seg.status = "error"

@@ -1612,7 +1612,7 @@ if active_context and active_context.get("segments"):
             # Renderizado visual elegante adaptado al Modo Claro y Oscuro
             for i, s in enumerate(marked_segs, start=1):
                 trans_html = highlight_citations_html(s.translated or s.original, is_marked=True)
-                orig_html = html.escape(s.original)
+                orig_html = highlight_citations_html(s.original, is_marked=False)
                 card_html = f"""
                 <div style="background: var(--paper-card-bg); border: 1px solid var(--paper-card-border); border-left: 5px solid #EAB308; border-radius: 10px; padding: 18px 22px; margin-bottom: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);" translate="no" class="notranslate">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
