@@ -461,7 +461,7 @@ else:
         div[data-testid="stMetricLabel"] p {
             color: #475569 !important;
         }
-        /* Bloques de código (st.code) legibles con alto contraste en Modo Claro */
+        /* Bloques de código (st.code) legibles y claros en Modo Claro (100% fondo blanco/claro) */
         [data-testid="stCodeBlock"],
         [data-testid="stCodeBlock"] pre,
         [data-testid="stCodeBlock"] code,
@@ -469,15 +469,15 @@ else:
         [data-testid="stCodeBlock"] code *,
         pre code,
         pre code span {
-            color: #F0F6FC !important;
-            background-color: #0D1117 !important;
+            color: #0F172A !important;
+            background-color: #F8FAFC !important;
         }
         [data-testid="stCodeBlock"] code span,
         [data-testid="stCodeBlock"] code * {
             background: transparent !important;
         }
         [data-testid="stCodeBlock"] pre {
-            border: 1px solid #30363D !important;
+            border: 1px solid #CBD5E1 !important;
             border-radius: 8px !important;
         }
         p:not([data-testid="stCodeBlock"] *):not(code *):not(pre *),
@@ -1609,7 +1609,34 @@ if active_context and active_context.get("segments"):
                     use_container_width=True,
                 )
 
-            st.code(dossier_text, language="markdown")
+            # Renderizado visual elegante adaptado al Modo Claro y Oscuro
+            for i, s in enumerate(marked_segs, start=1):
+                trans_html = highlight_citations_html(s.translated or s.original, is_marked=True)
+                orig_html = html.escape(s.original)
+                card_html = f"""
+                <div style="background: var(--paper-card-bg); border: 1px solid var(--paper-card-border); border-left: 5px solid #EAB308; border-radius: 10px; padding: 18px 22px; margin-bottom: 18px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);" translate="no" class="notranslate">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; flex-wrap: wrap; gap: 8px;">
+                        <span style="font-size: 1.05rem; font-weight: 800; color: var(--paper-text);">⭐ Cita #{i} — {html.escape(s.short_provenance)}</span>
+                        <span style="font-size: 0.78rem; background: var(--bilingual-normal-bg); border: 1px solid var(--paper-card-border); padding: 4px 12px; border-radius: 20px; color: var(--paper-subtext); font-weight: 600;">📍 {html.escape(s.provenance_label)}</span>
+                    </div>
+                    <div style="margin-top: 10px; margin-bottom: 12px;">
+                        <div style="font-size: 0.80rem; font-weight: 800; color: #2563EB; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px;">🌐 Traducción al Español:</div>
+                        <div style="font-size: 0.95rem; line-height: 1.65; color: var(--paper-text); background: var(--marked-card-bg); padding: 12px 16px; border-radius: 6px; border: 1px solid var(--marked-card-border);">
+                            "{trans_html}"
+                        </div>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <div style="font-size: 0.80rem; font-weight: 700; color: var(--paper-subtext); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px;">📄 Texto Original en Inglés:</div>
+                        <div style="font-size: 0.88rem; line-height: 1.55; color: var(--paper-subtext); font-style: italic; background: var(--bilingual-normal-bg); padding: 10px 14px; border-radius: 6px; border: 1px solid var(--paper-card-border);">
+                            "{orig_html}"
+                        </div>
+                    </div>
+                </div>
+                """
+                st.markdown(card_html, unsafe_allow_html=True)
+
+            with st.expander("📄 Ver y Copiar Texto Plano (Markdown / TXT)"):
+                st.text_area("Texto listo para copiar en tu tesis o reporte:", value=dossier_text, height=200, key="dossier_copy_area")
 
     # --------------------------------------------------------------------------
     # 4. Descargas Enriquecidas con Trazabilidad (Resumido y directo)
