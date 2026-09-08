@@ -13,8 +13,11 @@ Lectura, extracción estructurada académica y exportación de documentos
 import io
 import re
 import unicodedata
+import logging
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
+
+logger = logging.getLogger("translation_app.file_handlers")
 
 # --- Importaciones de Librerías Externas con Resiliencia de Despliegue ---
 try:
@@ -579,6 +582,123 @@ def _parse_body_page_blocks(lines: List[str], current_section: str) -> List[Tupl
     return results
 
 
+def _extract_pdf_page_highlights(page) -> List[Tuple[str, str]]:
+    """
+    Extrae fragmentos de texto anotados con resaltado (/Highlight) o subrayado (/Underline, /Squiggly)
+    en una página de PDF. Retorna lista de tuplas (texto_resaltado, color_hex).
+    """
+    highlights: List[Tuple[str, str]] = []
+    annots = getattr(page, "annotations", None)
+    if not annots:
+        annots = page.get("/Annots")
+    if not annots:
+        return highlights
+
+    boxes_with_colors = []
+    for a in annots:
+        try:
+            obj = a.get_object() if hasattr(a, "get_object") else a
+            if not isinstance(obj, dict):
+                continue
+            subtype = str(obj.get("/Subtype", ""))
+            if subtype not in ("/Highlight", "/Underline", "/Squiggly", "/StrikeOut"):
+                continue
+
+            # Extraer color si existe
+            c_val = obj.get("/C")
+            color_hex = "#FDE047"  # Amarillo por defecto
+            if c_val and hasattr(c_val, "__iter__"):
+                try:
+                    rgb = [max(0.0, min(1.0, float(x))) for x in c_val]
+                    if len(rgb) >= 3:
+                        r, g, b = int(rgb[0] * 255), int(rgb[1] * 255), int(rgb[2] * 255)
+                        color_hex = f"#{r:02X}{g:02X}{b:02X}"
+                except Exception:
+                    pass
+
+            # Si la anotación incluye texto directo en /Contents o /RC
+            contents_text = str(obj.get("/Contents", "") or "").strip()
+            if contents_text and len(contents_text) >= 3:
+                highlights.append((contents_text, color_hex))
+
+            # Coordenadas: QuadPoints o Rect
+            quads = obj.get("/QuadPoints")
+            if quads and hasattr(quads, "__iter__"):
+                q_coords = [float(x) for x in quads]
+                for i in range(0, len(q_coords) - 7, 8):
+                    xs = q_coords[i:i+8:2]
+                    ys = q_coords[i+1:i+8:2]
+                    boxes_with_colors.append((min(xs), min(ys), max(xs), max(ys), color_hex))
+            else:
+                rect = obj.get("/Rect")
+                if rect and hasattr(rect, "__iter__") and len(rect) >= 4:
+                    r = [float(x) for x in rect]
+                    boxes_with_colors.append((min(r[0], r[2]), min(r[1], r[3]), max(r[0], r[2]), max(r[1], r[3]), color_hex))
+        except Exception as e:
+            logger.debug("Error procesando anotación de PDF: %s", e)
+
+    if not boxes_with_colors:
+        return highlights
+
+    # Extraer texto de la página que cae dentro de las cajas delimitadoras
+    box_texts: Dict[int, List[str]] = {i: [] for i in range(len(boxes_with_colors))}
+
+    def visitor(text, cm, tm, font_dict, font_size):
+        if not text or not text.strip():
+            return
+        try:
+            x_start = tm[4]
+            y = tm[5]
+            fsize = font_size if font_size and font_size > 0 else 10.0
+            x_end = x_start + len(text) * (fsize * 0.48)
+            y_bottom = y - 3
+            y_top = y + fsize + 3
+
+            for i, (bx0, by0, bx1, by1, _) in enumerate(boxes_with_colors):
+                v_overlap = max(y_bottom, by0) <= min(y_top, by1)
+                h_overlap = max(x_start - 4, bx0) <= min(x_end + 4, bx1)
+                if v_overlap and h_overlap:
+                    box_texts[i].append(text)
+                    break
+        except Exception:
+            pass
+
+    try:
+        page.extract_text(visitor_text=visitor)
+        for i, (_, _, _, _, col) in enumerate(boxes_with_colors):
+            txt = "".join(box_texts[i]).strip()
+            if txt and len(txt) >= 2:
+                highlights.append((txt, col))
+    except Exception as e:
+        logger.debug("Error en visitor_text de PDF: %s", e)
+
+    return highlights
+
+
+def _match_highlight(text_val: str, page_highlights: List[Tuple[str, str]]) -> Tuple[bool, str]:
+    """Determina si un texto de párrafo coincide o contiene texto subrayado/resaltado."""
+    if not text_val or not page_highlights:
+        return False, "#FFD54F"
+
+    clean_val = re.sub(r"\s+", " ", text_val).strip().lower()
+
+    for hl_text, color_hex in page_highlights:
+        clean_hl = re.sub(r"\s+", " ", hl_text).strip().lower()
+        if len(clean_hl) < 3:
+            continue
+        if clean_hl in clean_val or clean_val in clean_hl:
+            return True, color_hex
+        if len(clean_hl) > 20 and clean_hl[:25] in clean_val:
+            return True, color_hex
+        hl_words = [w for w in clean_hl.split() if len(w) > 4]
+        if len(hl_words) >= 3:
+            matches = sum(1 for w in hl_words if w in clean_val)
+            if matches / len(hl_words) >= 0.65:
+                return True, color_hex
+
+    return False, "#FFD54F"
+
+
 def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
     """Extrae párrafos de PDF preservando número de página real, componentes de portada y secciones."""
     if not PYPDF_AVAILABLE:
@@ -613,6 +733,9 @@ def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
     section_paragraph_counter = 0
 
     for page_idx, page in enumerate(reader.pages, start=1):
+        # Detección de texto subrayado o resaltado en la página
+        page_highlights = _extract_pdf_page_highlights(page)
+
         try:
             raw_text = page.extract_text() or ""
         except Exception:
@@ -642,6 +765,9 @@ def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
             text_val = re.sub(r"[ \t]+", " ", text_val).strip()
             if not text_val or len(text_val) < 2:
                 continue
+
+            # Comprobar si el texto coincide con alguna anotación de subrayado/resaltado
+            is_hl, hl_col = _match_highlight(text_val, page_highlights)
 
             if elem_type == "heading":
                 current_section = sec_hint or text_val
@@ -678,6 +804,8 @@ def extract_academic_pdf(file_bytes: bytes) -> List[Segment]:
                 page=page_idx,
                 paragraph_num=para_num,
                 element_type=elem_type,
+                is_marked=is_hl,
+                color=hl_col,
             )
             segments.append(seg)
             seg_id += 1
@@ -751,6 +879,25 @@ def extract_academic_docx(file_bytes: bytes) -> List[Segment]:
         else:
             para_num = 1
 
+        # Detección de texto resaltado o subrayado en runs de DOCX
+        is_highlighted_run = False
+        run_highlight_color = "#FFD54F"
+        if hasattr(p, "runs") and p.runs:
+            for r in p.runs:
+                if r.font.highlight_color is not None or r.font.underline:
+                    is_highlighted_run = True
+                    if r.font.highlight_color:
+                        hl_name = str(r.font.highlight_color).upper()
+                        if "YELLOW" in hl_name:
+                            run_highlight_color = "#FEF08A"
+                        elif "GREEN" in hl_name:
+                            run_highlight_color = "#BBF7D0"
+                        elif "CYAN" in hl_name or "TURQUOISE" in hl_name:
+                            run_highlight_color = "#BAE6FD"
+                        elif "PINK" in hl_name or "MAGENTA" in hl_name:
+                            run_highlight_color = "#FBCFE8"
+                    break
+
         seg = Segment(
             id=seg_id,
             original=text,
@@ -759,6 +906,8 @@ def extract_academic_docx(file_bytes: bytes) -> List[Segment]:
             page=current_page,
             paragraph_num=para_num,
             element_type=elem_type,
+            is_marked=is_highlighted_run,
+            color=run_highlight_color,
         )
         segments.append(seg)
         seg_id += 1
@@ -867,10 +1016,11 @@ def export_txt(segments: List[Segment], enriched: bool = False) -> bytes:
     lines = []
     for s in segments:
         text = s.translated or s.original
-        if enriched and s.is_marked:
-            lines.append(f"★ [MARCADO / CITACIÓN]")
+        if s.is_marked:
+            lines.append(f"★ [SUBRAYADO EN EL ORIGINAL / CITACIÓN]")
             lines.append(text)
-            lines.append(f"   ↳ [Procedencia: {s.provenance_label}]")
+            if enriched:
+                lines.append(f"   ↳ [Procedencia: {s.provenance_label}]")
         else:
             lines.append(text)
     return "\n\n".join(lines).encode("utf-8")
@@ -963,7 +1113,7 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
             run_text = p.add_run(clean_abs)
             run_text.italic = True
             run_text.font.size = Pt(9.5)
-            if enriched and ab.is_marked:
+            if ab.is_marked:
                 run_text.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
     # Palabras clave
@@ -1013,7 +1163,7 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
             p.paragraph_format.space_after = Pt(3)
             run = p.add_run(text)
             run.font.size = Pt(8)
-            if enriched and s.is_marked:
+            if s.is_marked:
                 run.font.highlight_color = WD_COLOR_INDEX.YELLOW
         else:
             p = doc.add_paragraph()
@@ -1021,7 +1171,7 @@ def export_docx(segments: List[Segment], enriched: bool = False) -> bytes:
             p.paragraph_format.line_spacing = 1.15
             run = p.add_run(text)
             run.font.size = Pt(9.5)
-            if enriched and s.is_marked:
+            if s.is_marked:
                 run.font.highlight_color = WD_COLOR_INDEX.YELLOW
 
         # Si está marcado y enriquecido, nota de procedencia
@@ -1214,9 +1364,14 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
         box_padding = 8
         abs_box_height = (len(abs_lines) * 11.0) + (len(kw_lines) * 10.2 + 4 if kw_lines else 0) + (2 * box_padding)
 
+        abs_is_marked = any(ab.is_marked for ab in abstract_segs)
         c.saveState()
-        c.setFillColorRGB(0.96, 0.97, 0.99)
-        c.setStrokeColorRGB(0.80, 0.84, 0.90)
+        if abs_is_marked:
+            c.setFillColorRGB(1.0, 0.98, 0.90)
+            c.setStrokeColorRGB(0.92, 0.70, 0.12)
+        else:
+            c.setFillColorRGB(0.96, 0.97, 0.99)
+            c.setStrokeColorRGB(0.80, 0.84, 0.90)
         c.roundRect(margin, y - abs_box_height, width - 2 * margin, abs_box_height, 4, fill=1, stroke=1)
         c.restoreState()
 
@@ -1288,7 +1443,8 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
             continue
 
         elem_type = s.element_type
-        is_marked = (enriched and s.is_marked)
+        is_marked = s.is_marked
+        show_provenance = (enriched and s.is_marked)
 
         # Configuración tipográfica según jerarquía del paper
         if elem_type == "heading":
@@ -1344,7 +1500,7 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
 
             col_x = get_col_x(current_col)
 
-            # Fondo y barra ámbar para párrafos marcados
+            # Fondo y barra ámbar para párrafos marcados/subrayados
             if is_marked:
                 c.saveState()
                 c.setFillColorRGB(1.0, 0.98, 0.90)  # Amarillo tenue
@@ -1364,8 +1520,8 @@ def export_pdf(segments: List[Segment], enriched: bool = False) -> bytes:
             _draw_academic_line(c, line, line_x, curr_y, font_name, font_size, target_line_w, is_last_line=is_last)
             curr_y -= leading
 
-        # Nota de procedencia si el párrafo está marcado
-        if is_marked:
+        # Nota de procedencia solo si el párrafo está marcado y es enriquecido
+        if show_provenance:
             prov_leading = 9.5
             if curr_y - prov_leading < bottom_margin:
                 next_column_or_page()

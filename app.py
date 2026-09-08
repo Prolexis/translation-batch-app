@@ -865,6 +865,7 @@ def init_session_state():
     st.session_state.setdefault("selected_paragraph_idx", 0)
     st.session_state.setdefault("active_file", "")
     st.session_state.setdefault("marked_ids", set())  # Set de enteros con IDs marcados
+    st.session_state.setdefault("marked_ids_by_file", {})  # Diccionario {fname: set(ids)}
 
 
 init_session_state()
@@ -985,6 +986,19 @@ with st.sidebar:
             else:
                 st.error("No se encontró el archivo de muestra DOCX.")
 
+    if st.button("🖍️ Probar Paper con Subrayado", use_container_width=True):
+        sample_hl_path = os.path.join(sample_dir, "paper_con_subrayado.pdf")
+        if os.path.exists(sample_hl_path):
+            with open(sample_hl_path, "rb") as f:
+                st.session_state.uploaded_map["paper_con_subrayado.pdf"] = f.read()
+                st.session_state.files_status["paper_con_subrayado.pdf"] = "pendiente"
+                st.session_state.active_file = "paper_con_subrayado.pdf"
+            st.session_state.marked_ids.clear()
+            st.success("Paper con texto subrayado cargado.")
+            st.rerun()
+        else:
+            st.error("No se encontró el archivo con subrayado.")
+
 
 st.markdown("""
 <div class="hero-banner">
@@ -1046,6 +1060,7 @@ if st.session_state.uploaded_map:
             st.session_state.results.clear()
             st.session_state.uploaded_map.clear()
             st.session_state.marked_ids.clear()
+            st.session_state.marked_ids_by_file.clear()
             st.session_state.active_file = ""
             st.rerun()
 
@@ -1056,6 +1071,7 @@ if st.session_state.uploaded_map:
         else:
             st.session_state.processing = True
             st.session_state.marked_ids.clear()
+            st.session_state.marked_ids_by_file.clear()
 
             from agents.orchestrator import TranslationOrchestrator
 
@@ -1111,6 +1127,13 @@ if st.session_state.uploaded_map:
                     st.session_state.results[fname] = ctx
                     st.session_state.files_status[fname] = ctx.get("file_status", "error")
 
+                    # Registrar automáticamente los párrafos detectados como subrayados o resaltados en el original
+                    if ctx.get("segments"):
+                        st.session_state.setdefault("marked_ids_by_file", {})
+                        st.session_state.marked_ids_by_file[fname] = {
+                            seg_item.id for seg_item in ctx["segments"] if getattr(seg_item, "is_marked", False)
+                        }
+
                 progress_bar.progress(1.0, text="Traducción completada con éxito.")
             except Exception as main_exc:
                 logger.exception("Error general en el proceso de traducción")
@@ -1130,15 +1153,30 @@ if active_context and active_context.get("segments"):
     segments: List[Segment] = active_context["segments"]
     total_segs = len(segments)
 
-    # Sincronizar estado de marcado con el session_state persistente
+    # Diccionario persistente de IDs marcados por archivo
+    st.session_state.setdefault("marked_ids_by_file", {})
+    if active_fname not in st.session_state.marked_ids_by_file:
+        st.session_state.marked_ids_by_file[active_fname] = {
+            s.id for s in segments if getattr(s, "is_marked", False)
+        }
+
+    file_marked = st.session_state.marked_ids_by_file[active_fname]
+    # Sincronizar estado de marcado
     for s in segments:
-        s.is_marked = (s.id in st.session_state.marked_ids)
+        s.is_marked = (s.id in file_marked)
+    st.session_state.marked_ids = file_marked
 
     marked_segs = [s for s in segments if s.is_marked]
 
     st.markdown("---")
     st.markdown("### 📄 1. Previsualización del Paper Traducido y Descarga Inmediata")
     st.caption("Examina el documento maquetado tal cual el paper original antes de descargarlo en tu formato preferido:")
+
+    if marked_segs:
+        st.info(
+            f"✨ **Subrayado original preservado:** Se han detectado y conservado **{len(marked_segs)} párrafos subrayados/resaltados** "
+            f"del documento de origen. Aparecerán destacados en el PDF interactivo, en la hoja de lectura y en los archivos de descarga (.PDF y .DOCX)."
+        )
 
     # Generar binarios de exportación
     pdf_bytes = export_segments(segments, "pdf", enriched=False)
@@ -1295,10 +1333,12 @@ if active_context and active_context.get("segments"):
 
     # Callbacks de marcado nativos de Streamlit (actualizan estado antes del ciclo de renderizado)
     def _toggle_mark_seg(seg_id: int, p_idx: Optional[int] = None):
-        if seg_id in st.session_state.marked_ids:
-            st.session_state.marked_ids.discard(seg_id)
+        file_marked = st.session_state.marked_ids_by_file.setdefault(active_fname, set())
+        if seg_id in file_marked:
+            file_marked.discard(seg_id)
         else:
-            st.session_state.marked_ids.add(seg_id)
+            file_marked.add(seg_id)
+        st.session_state.marked_ids = file_marked
         if p_idx is not None:
             st.session_state.selected_paragraph_idx = p_idx
 
