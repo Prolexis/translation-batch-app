@@ -43,6 +43,9 @@ _AUTHOR_YEAR_REGEX = re.compile(r"\(([A-Z][a-zA-Z\s]+(?:et\s+al\.?)?,?\s*(?:19|2
 class ValidatorAgent:
     name = "validator"
 
+    def __init__(self, *args, **kwargs):
+        pass
+
     def _check_citation_integrity(self, original: str, translated: str) -> List[str]:
         """Verifica que las citas numéricas y de autores del original sigan existiendo en la traducción."""
         issues = []

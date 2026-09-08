@@ -23,7 +23,7 @@ logger = logging.getLogger("translation_app.aligner")
 class AlignerAgent:
     name = "aligner"
 
-    def __init__(self, api_key: str = None):
+    def __init__(self, api_key: str = None, *args, **kwargs):
         self._embeddings = None
         self.api_key = api_key or settings.GEMINI_API_KEY
 

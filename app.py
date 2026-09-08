@@ -1010,6 +1010,18 @@ if st.session_state.uploaded_map:
         else:
             st.session_state.processing = True
             st.session_state.marked_ids.clear()
+
+            # Asegurar recarga de agentes si Streamlit Cloud mantiene módulos previos en sys.modules
+            try:
+                import importlib
+                import agents.orchestrator
+                import agents.translator_agent
+                importlib.reload(agents.translator_agent)
+                importlib.reload(agents.orchestrator)
+                from agents.orchestrator import TranslationOrchestrator
+            except Exception as _reload_err:
+                logger.debug("Aviso de recarga de módulos: %s", _reload_err)
+
             speed_map = {
                 "ultra": (16, 5),
                 "balanced": (10, 4),
@@ -1017,38 +1029,58 @@ if st.session_state.uploaded_map:
             }
             eff_batch_size, eff_workers = speed_map.get(speed_mode, (16, 5))
 
-            orchestrator = TranslationOrchestrator(
-                source_lang=source_lang,
-                target_lang=target_lang,
-                alignment_mode=alignment_mode,
-                api_key=api_key_input,
-                batch_size=eff_batch_size,
-                max_workers=eff_workers,
-            )
-
-            progress_bar = st.progress(0.0, text="Iniciando traducción académica...")
-            files = list(st.session_state.uploaded_map.keys())
-            total_files = len(files)
-
-            for idx, fname in enumerate(files):
-                st.session_state.files_status[fname] = "procesando"
-
-                def _progress_cb(stage_msg: str, frac: float, _f=fname, _i=idx):
-                    overall = (_i + frac) / total_files
-                    progress_bar.progress(min(overall, 1.0), text=f"[{_f}] {stage_msg}")
-
+            try:
                 try:
-                    f_bytes = st.session_state.uploaded_map[fname]
-                    ctx = orchestrator.process_file(fname, f_bytes, on_progress=_progress_cb)
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("Error procesando paper %s", fname)
-                    ctx = {"error": str(exc), "file_status": "error", "segments": []}
+                    orchestrator = TranslationOrchestrator(
+                        source_lang=source_lang,
+                        target_lang=target_lang,
+                        alignment_mode=alignment_mode,
+                        api_key=api_key_input,
+                        batch_size=eff_batch_size,
+                        max_workers=eff_workers,
+                    )
+                except TypeError as te:
+                    logger.warning("Fallo al instanciar con parámetros de lote (%s). Usando inicialización compatible...", te)
+                    orchestrator = TranslationOrchestrator(
+                        source_lang=source_lang,
+                        target_lang=target_lang,
+                        alignment_mode=alignment_mode,
+                        api_key=api_key_input,
+                    )
+                    orchestrator.batch_size = eff_batch_size
+                    orchestrator.max_workers = eff_workers
+                    if hasattr(orchestrator, "translator"):
+                        orchestrator.translator.batch_size = eff_batch_size
+                        orchestrator.translator.max_workers = eff_workers
 
-                st.session_state.results[fname] = ctx
-                st.session_state.files_status[fname] = ctx.get("file_status", "error")
+                progress_bar = st.progress(0.0, text="Iniciando traducción académica...")
+                files = list(st.session_state.uploaded_map.keys())
+                total_files = len(files)
 
-            progress_bar.progress(1.0, text="Traducción completada con éxito.")
-            st.session_state.processing = False
+                for idx, fname in enumerate(files):
+                    st.session_state.files_status[fname] = "procesando"
+
+                    def _progress_cb(stage_msg: str, frac: float, _f=fname, _i=idx):
+                        overall = (_i + frac) / total_files
+                        progress_bar.progress(min(overall, 1.0), text=f"[{_f}] {stage_msg}")
+
+                    try:
+                        f_bytes = st.session_state.uploaded_map[fname]
+                        ctx = orchestrator.process_file(fname, f_bytes, on_progress=_progress_cb)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.exception("Error procesando paper %s", fname)
+                        ctx = {"error": str(exc), "file_status": "error", "segments": []}
+
+                    st.session_state.results[fname] = ctx
+                    st.session_state.files_status[fname] = ctx.get("file_status", "error")
+
+                progress_bar.progress(1.0, text="Traducción completada con éxito.")
+            except Exception as main_exc:
+                logger.exception("Error general en el proceso de traducción")
+                st.error(f"❌ Error durante el proceso de traducción: {main_exc}")
+            finally:
+                st.session_state.processing = False
+
             st.rerun()
 
 # ------------------------------------------------------------------------------

@@ -27,6 +27,9 @@ logger = logging.getLogger("translation_app.extractor")
 class ExtractorAgent:
     name = "extractor"
 
+    def __init__(self, *args, **kwargs):
+        pass
+
     def run(self, context: dict) -> dict:
         filename = context["filename"]
         file_bytes = context["file_bytes"]

@@ -52,11 +52,12 @@ class TranslatorAgent:
     name = "translator"
 
     def __init__(self, model_name: str = None, api_key: str = None, temperature: float = 0.15,
-                 batch_size: int = None, max_workers: int = None):
+                 batch_size: int = None, max_workers: int = None,
+                 *args, **kwargs):
         self.model_name = model_name or settings.GEMINI_MODEL
         self.api_key = api_key or settings.GEMINI_API_KEY
-        self.batch_size = batch_size or BATCH_SIZE
-        self.max_workers = max_workers or MAX_CONCURRENT_WORKERS
+        self.batch_size = int(batch_size) if batch_size is not None else BATCH_SIZE
+        self.max_workers = int(max_workers) if max_workers is not None else MAX_CONCURRENT_WORKERS
         self._llm = ChatGoogleGenerativeAI(
             model=self.model_name,
             google_api_key=self.api_key,

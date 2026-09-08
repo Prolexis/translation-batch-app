@@ -18,12 +18,26 @@ except ImportError:
     pass
 
 
+def _get_conf(key: str, default: str = "") -> str:
+    """Obtiene configuración desde os.environ o st.secrets de Streamlit Cloud."""
+    val = os.getenv(key)
+    if val:
+        return val
+    try:
+        import streamlit as st
+        if hasattr(st, "secrets") and key in st.secrets:
+            return str(st.secrets[key])
+    except Exception:
+        pass
+    return default
+
+
 @dataclass(frozen=True)
 class Settings:
     # --- Credenciales / modelo ---
-    GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
-    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
-    GEMINI_EMBEDDING_MODEL: str = os.getenv("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
+    GEMINI_API_KEY: str = _get_conf("GEMINI_API_KEY", "")
+    GEMINI_MODEL: str = _get_conf("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    GEMINI_EMBEDDING_MODEL: str = _get_conf("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
 
     # --- Idiomas (por defecto Paper en Inglés -> Español) ---
     DEFAULT_SOURCE_LANG: str = os.getenv("DEFAULT_SOURCE_LANG", "en")
