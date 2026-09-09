@@ -745,14 +745,16 @@ st.markdown("""
         text-align: justify;
     }
 
-    .academic-inline-highlight {
-        background-color: #FEF08A !important;
+    .academic-inline-highlight, mark, u {
+        text-decoration: underline 2.5px #D97706 !important;
+        text-underline-offset: 3.5px !important;
+        background-color: rgba(254, 240, 138, 0.65) !important;
         color: #0F172A !important;
         padding: 1px 4px;
         border-radius: 3px;
         box-decoration-break: clone;
         -webkit-box-decoration-break: clone;
-        font-weight: 500;
+        font-weight: 600;
     }
 
     .paper-sheet-more {
@@ -1069,6 +1071,9 @@ if st.session_state.uploaded_map:
             st.session_state.marked_ids.clear()
             st.session_state.marked_ids_by_file.clear()
             st.session_state.active_file = ""
+            for k in list(st.session_state.keys()):
+                if k.startswith("export_cache_"):
+                    del st.session_state[k]
             st.rerun()
 
     # Procesamiento Automático
@@ -1079,15 +1084,18 @@ if st.session_state.uploaded_map:
             st.session_state.processing = True
             st.session_state.marked_ids.clear()
             st.session_state.marked_ids_by_file.clear()
+            for k in list(st.session_state.keys()):
+                if k.startswith("export_cache_"):
+                    del st.session_state[k]
 
             from agents.orchestrator import TranslationOrchestrator
 
             speed_map = {
-                "ultra": (16, 5),
-                "balanced": (10, 4),
-                "conservative": (6, 3),
+                "ultra": (18, 2),
+                "balanced": (14, 2),
+                "conservative": (10, 1),
             }
-            eff_batch_size, eff_workers = speed_map.get(speed_mode, (16, 5))
+            eff_batch_size, eff_workers = speed_map.get(speed_mode, (18, 2))
 
             try:
                 try:
@@ -1138,7 +1146,11 @@ if st.session_state.uploaded_map:
                     if ctx.get("segments"):
                         st.session_state.setdefault("marked_ids_by_file", {})
                         st.session_state.marked_ids_by_file[fname] = {
-                            seg_item.id for seg_item in ctx["segments"] if getattr(seg_item, "is_marked", False)
+                            seg_item.id for seg_item in ctx["segments"]
+                            if getattr(seg_item, "is_marked", False)
+                            or "<mark>" in getattr(seg_item, "original", "")
+                            or "<mark>" in getattr(seg_item, "translated", "")
+                            or "<u>" in getattr(seg_item, "original", "")
                         }
 
                 progress_bar.progress(1.0, text="Traducción completada con éxito.")
@@ -1164,7 +1176,11 @@ if active_context and active_context.get("segments"):
     st.session_state.setdefault("marked_ids_by_file", {})
     if active_fname not in st.session_state.marked_ids_by_file:
         st.session_state.marked_ids_by_file[active_fname] = {
-            s.id for s in segments if getattr(s, "is_marked", False)
+            s.id for s in segments
+            if getattr(s, "is_marked", False)
+            or "<mark>" in getattr(s, "original", "")
+            or "<mark>" in getattr(s, "translated", "")
+            or "<u>" in getattr(s, "original", "")
         }
 
     file_marked = st.session_state.marked_ids_by_file[active_fname]
@@ -1181,14 +1197,22 @@ if active_context and active_context.get("segments"):
 
     if marked_segs:
         st.info(
-            f"✨ **Subrayado original preservado:** Se han detectado y conservado **{len(marked_segs)} párrafos subrayados/resaltados** "
-            f"del documento de origen. Aparecerán destacados en el PDF interactivo, en la hoja de lectura y en los archivos de descarga (.PDF y .DOCX)."
+            f"✨ **Subrayado original preservado:** Se han detectado y conservado **{len(marked_segs)} párrafos con partes subrayadas/resaltadas** "
+            f"del documento de origen. Únicamente las frases subrayadas aparecen destacadas con subrayado y color en el visor, en la hoja de lectura y en los archivos de descarga (.PDF y .DOCX)."
         )
 
-    # Generar binarios de exportación
-    pdf_bytes = export_segments(segments, "pdf", enriched=False)
-    docx_bytes = export_segments(segments, "docx", enriched=False)
-    txt_bytes = export_segments(segments, "txt", enriched=False)
+    # Generar binarios de exportación (con caché para que la interacción sea instantánea)
+    cache_key = f"export_cache_{active_fname}"
+    if cache_key not in st.session_state:
+        st.session_state[cache_key] = {
+            "pdf": export_segments(segments, "pdf", enriched=False),
+            "docx": export_segments(segments, "docx", enriched=False),
+            "txt": export_segments(segments, "txt", enriched=False),
+        }
+    cached_binaries = st.session_state[cache_key]
+    pdf_bytes = cached_binaries["pdf"]
+    docx_bytes = cached_binaries["docx"]
+    txt_bytes = cached_binaries["txt"]
     b64_pdf = base64.b64encode(pdf_bytes).decode("utf-8")
 
     # Botonera de Descarga Destacada
@@ -1238,7 +1262,61 @@ if active_context and active_context.get("segments"):
             components.html(viewer_html, height=720, scrolling=False)
         else:
             # Hoja de Paper Científico (Simulador de Paper Real en HTML/CSS adaptable)
-            st.caption("Previsualización estructurada fiel a formato IEEE / revista académica con 2 columnas reales, título, autores, abstract y citas:")
+            st.caption("Previsualización estructurada fiel a formato IEEE / revista académica con 2 columnas reales, título, autores, abstract, tablas y citas:")
+
+            def _render_academic_table_html(raw_text: str) -> str:
+                lines = [l.strip() for l in raw_text.split("\n") if l.strip()]
+                if not lines:
+                    return ""
+                caption_lines = []
+                i = 0
+                if i < len(lines) and re.match(r'^(?:Table|Tabla)\s+\d+', lines[i], re.I):
+                    caption_lines.append(lines[i])
+                    i += 1
+                    if i < len(lines) and not re.search(r'\b(?:\%|\d+\.\d+|√|\✓)\b', lines[i]) and len(lines[i].split()) > 3:
+                        caption_lines.append(lines[i])
+                        i += 1
+                caption_text = " — ".join(caption_lines)
+                data_lines = lines[i:]
+                if not data_lines:
+                    return f'<div class="paper-sheet-table-card" style="margin:14px 0; break-inside:avoid; column-span:all;"><div class="table-caption" style="font-weight:700; font-size:0.88rem;"><strong>{html.escape(caption_text)}</strong></div></div>'
+
+                def split_row_cols(line: str):
+                    cols = re.split(r'\s{2,}|\t', line)
+                    cols = [c.strip() for c in cols if c.strip()]
+                    if len(cols) <= 1:
+                        tokens = line.split()
+                        tail_nums = []
+                        while tokens and (re.match(r'^(?:\d+(?:\.\d+)?\%?|[√✓\-]|\d+\s*-\s*\d+|NA)$', tokens[-1], re.I) or tokens[-1] == '%'):
+                            tail_nums.insert(0, tokens.pop())
+                        if tail_nums and tokens:
+                            cols = [" ".join(tokens)] + tail_nums
+                        else:
+                            cols = [line]
+                    return cols
+
+                header_cols = split_row_cols(data_lines[0])
+                html_parts = [
+                    '<div class="paper-sheet-table-card" style="margin: 14px 0; break-inside: avoid; column-span: all; width: 100%;">'
+                ]
+                if caption_text:
+                    html_parts.append(f'<div class="table-caption" style="font-weight: 700; font-size: 0.88rem; margin-bottom: 6px; text-align: left; color: var(--text-color, #1e293b);">{html.escape(caption_text)}</div>')
+
+                html_parts.append('<div class="table-responsive" style="overflow-x: auto; max-width: 100%;">')
+                html_parts.append('<table class="academic-table" style="width: 100%; border-collapse: collapse; font-size: 0.82rem; line-height: 1.35; border-top: 2px solid #334155; border-bottom: 2px solid #334155;">')
+                html_parts.append('<thead><tr style="border-bottom: 1px solid #334155; background: rgba(0,0,0,0.02);">')
+                for hc in header_cols:
+                    html_parts.append(f'<th style="padding: 5px 8px; text-align: left; font-weight: 700; color: inherit;">{html.escape(hc)}</th>')
+                html_parts.append('</tr></thead><tbody>')
+                for d_line in data_lines[1:]:
+                    row_cols = split_row_cols(d_line)
+                    html_parts.append('<tr style="border-bottom: 1px solid rgba(0,0,0,0.05);">')
+                    for idx, rc in enumerate(row_cols):
+                        align = "left" if idx == 0 and not re.match(r'^\d', rc) else "right" if re.search(r'\d|\%|√|✓', rc) else "left"
+                        html_parts.append(f'<td style="padding: 4px 8px; text-align: {align}; color: inherit;">{html.escape(rc)}</td>')
+                    html_parts.append('</tr>')
+                html_parts.append('</tbody></table></div></div>')
+                return "".join(html_parts)
 
             metadata_segs = [s for s in segments if s.element_type == "metadata"]
             title_segs = [s for s in segments if s.element_type == "title"]
@@ -1285,8 +1363,8 @@ if active_context and active_context.get("segments"):
             if abstract_txt or keywords_txt:
                 paper_sheet_html.append('<div class="paper-sheet-abstract-box">')
                 if abstract_txt:
-                    clean_abs = re.sub(r"^(?:abstract|resumen)\s*[\:\—\-\.]*\s*", "", abstract_txt, flags=re.I)
-                    abs_colored = highlight_citations_html(clean_abs, is_marked=False)
+                    clean_abs = re.sub(r"^(?:A\s*B\s*S\s*T\s*R\s*A\s*C\s*T|abstract|R\s*E\s*S\s*U\s*M\s*E\s*N|resumen)\s*[\:\—\-\.]*\s*", "", abstract_txt, flags=re.I)
+                    abs_colored = highlight_citations_html(clean_abs, is_marked=any(s.is_marked for s in abstract_segs))
                     paper_sheet_html.append(
                         f'<div class="paper-sheet-abstract">'
                         f'<strong class="paper-sheet-abstract-label">RESUMEN — </strong>'
@@ -1294,7 +1372,7 @@ if active_context and active_context.get("segments"):
                         f'</div>'
                     )
                 if keywords_txt:
-                    clean_kw = re.sub(r"^(?:index terms|keywords|palabras clave)\s*[\:\—\-\.]*\s*", "", keywords_txt, flags=re.I)
+                    clean_kw = re.sub(r"^(?:K\s*E\s*Y\s*W\s*O\s*R\s*D\s*S|keywords|index\s+terms|palabras\s+clave|key\s+words|t[eé]rminos\s+de\s+[ií]ndice)\s*[\:\—\-\.]*\s*", "", keywords_txt, flags=re.I)
                     paper_sheet_html.append(
                         f'<div class="paper-sheet-keywords" style="margin-top:6px;">'
                         f'<strong class="paper-sheet-keywords-label">PALABRAS CLAVE — </strong>'
@@ -1311,6 +1389,10 @@ if active_context and active_context.get("segments"):
                 text_val = s.translated or s.original
                 if s.element_type == "heading":
                     paper_sheet_html.append(f'<h4 class="paper-sheet-heading">{html.escape(text_val)}</h4>')
+                elif s.element_type == "table":
+                    paper_sheet_html.append(_render_academic_table_html(text_val))
+                elif s.element_type == "caption":
+                    paper_sheet_html.append(f'<div class="paper-sheet-caption" style="font-size:0.84rem; font-style:italic; text-align:center; margin:10px 0; color:var(--text-secondary, #64748b);"><i class="bi bi-image me-1"></i>{html.escape(text_val)}</div>')
                 elif s.element_type == "reference":
                     paper_sheet_html.append(f'<div class="paper-sheet-ref">{html.escape(text_val)}</div>')
                 elif s.element_type == "formula":

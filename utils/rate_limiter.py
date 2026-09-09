@@ -26,24 +26,37 @@ logger = logging.getLogger("translation_app.rate_limiter")
 
 
 class RateLimiter:
-    """Limita las llamadas salientes a N por minuto (thread-safe)."""
+    """Limita las llamadas salientes a N por minuto (thread-safe) con espaciado suave anti-ráfagas."""
 
     def __init__(self, max_calls_per_minute: int = None):
         self.max_calls = max_calls_per_minute or settings.MAX_CALLS_PER_MINUTE
         self._lock = threading.Lock()
         self._timestamps: list[float] = []
+        self._last_call_time: float = 0.0
 
     def acquire(self):
         with self._lock:
             now = time.time()
-            # descarta timestamps fuera de la ventana de 60s
-            self._timestamps = [t for t in self._timestamps if now - t < 60]
+            # 1. Descartar timestamps fuera de la ventana de 60s
+            self._timestamps = [t for t in self._timestamps if now - t < 60.0]
             if len(self._timestamps) >= self.max_calls:
-                sleep_for = 60 - (now - self._timestamps[0]) + 0.05
-                logger.info("Rate limit local alcanzado, esperando %.2fs", sleep_for)
-                time.sleep(max(sleep_for, 0))
+                sleep_for = 60.0 - (now - self._timestamps[0]) + 0.2
+                logger.info("Rate limit local alcanzado (%d llamadas en 60s), esperando %.2fs", len(self._timestamps), sleep_for)
+                time.sleep(max(sleep_for, 0.1))
                 now = time.time()
-                self._timestamps = [t for t in self._timestamps if now - t < 60]
+                self._timestamps = [t for t in self._timestamps if now - t < 60.0]
+
+            # 2. Espaciado uniforme mínimo entre llamadas sucesivas (evita ráfagas concurrentes que activan 429)
+            # Para 14 RPM max en Free Tier, espaciado de ~4.3s
+            min_interval = 60.0 / max(self.max_calls, 1)
+            if self._last_call_time > 0:
+                elapsed = now - self._last_call_time
+                if elapsed < min_interval:
+                    wait_spacing = min_interval - elapsed
+                    time.sleep(wait_spacing)
+                    now = time.time()
+
+            self._last_call_time = now
             self._timestamps.append(now)
 
 

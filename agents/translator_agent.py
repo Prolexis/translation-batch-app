@@ -23,7 +23,12 @@ from langchain_core.output_parsers import StrOutputParser
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from config import settings
-from utils.file_handlers import Segment, repair_academic_symbols_and_ligatures, clean_math_display
+from utils.file_handlers import (
+    Segment,
+    repair_academic_symbols_and_ligatures,
+    clean_math_display,
+    _build_flexible_phrase_regex,
+)
 from utils.rate_limiter import with_backoff
 
 logger = logging.getLogger("translation_app.translator")
@@ -65,17 +70,23 @@ class TranslatorAgent:
         )
         self._parser = StrOutputParser()
 
-    def _build_batch_chain(self, source_name: str, target_name: str):
+    def _build_batch_chain(self):
         system = (
-            f"You are an elite academic translator specializing in scientific papers and research articles.\n"
-            f"Translate each numbered academic paragraph provided below from {source_name} into formal scientific {target_name}.\n\n"
+            "You are an elite academic translator specializing in scientific papers and research articles.\n"
+            "Translate each numbered academic paragraph provided below from {source_name} into formal scientific {target_name}.\n\n"
             "STRICT ACADEMIC RULES:\n"
             "1. TERMINOLOGY: Use formal academic vocabulary in Spanish (e.g., 'mecanismo de atención', 'aprendizaje profundo', 'conjunto de datos', 'red neuronal').\n"
             "2. CITATIONS: Absolutely PRESERVE all in-text citations exactly as written, including bracket citations [1], [2, 3] and author-year citations (Smith et al., 2020). NEVER alter or remove citation markers.\n"
             "3. CROSS-REFERENCES: Preserve cross-reference labels accurately ('Figure 1' -> 'Figura 1', 'Table 2' -> 'Tabla 2', 'Eq. (3)' -> 'Ec. (3)').\n"
             "4. MATHEMATICS & FORMULAS: Preserve mathematical variables ($k$, $\\tau_l$, $\\delta_p$, $M_o$, etc.) and formulas. Repair broken ligature characters (such as 'signi■cantly' -> 'significativamente' or 'tupla ■S, s0■' -> '<S, s0>').\n"
             "5. DELIMITERS: CRITICAL REQUIREMENT: You MUST prepend each translated paragraph with its exact marker [P_{{id}}], followed by the translated text on a new line.\n"
-            "6. HIGHLIGHTED / UNDERLINED SPANS: If any sentence, phrase, or term in the source text is enclosed in <mark>...</mark>, you MUST PRESERVE the <mark>...</mark> tags strictly around the exact corresponding translated phrase in the target language. Do NOT mark words that were not inside <mark>...</mark>. Do NOT omit the <mark>...</mark> tags.\n\n"
+            "6. HIGHLIGHTED / UNDERLINED SPANS: If any sentence, phrase, or term in the source text is enclosed in <mark>...</mark> or <u>...</u>, you MUST PRESERVE the exact <mark>...</mark> tags strictly around the corresponding translated phrase in {target_name}.\n"
+            "   - Underline/mark ONLY the exact translated words that correspond to the marked source text.\n"
+            "   - NEVER mark entire paragraphs if only a part was marked in the source.\n"
+            "   - NEVER mark following sentences or preceding sentences that were NOT marked in the source (e.g. if the highlight ends at '[79].', close </mark> immediately after '[79].').\n"
+            "   - NEVER omit or drop the <mark> and </mark> tags.\n"
+            "   - Example: 'We show that <mark>attention is effective</mark> for alignment. Other text.' -> 'Demostramos que <mark>la atención es eficaz</mark> para la alineación. Otro texto.'\n"
+            "7. TABLES: If a block is a table (starts with 'Table X' or contains tabular data), preserve the row-by-row structure and newlines. Translate only the table title, column headers, and textual labels. Never change numbers, percentages, or symbols (like √ or -). Keep lines separated by newlines.\n\n"
             "Do not omit any [P_{{id}}] marker. Return ONLY the marked translated paragraphs without any extra conversational filler.\n\n"
             "Example format:\n"
             "[P_0]\n"
@@ -92,9 +103,10 @@ class TranslatorAgent:
     def _build_single_chain(self, retry_reason: str = None):
         system = (
             "You are an expert academic translator specializing in scholarly papers.\n"
-            "Translate the source text accurately into {target_name}.\n"
+            "Translate the source text accurately from {source_name} into {target_name}.\n"
             "Preserve in-text citations [1], (Author, Year), equations, and formal terminology.\n"
-            "If any text is enclosed in <mark>...</mark>, you MUST PRESERVE the <mark>...</mark> tags strictly around the corresponding translated words.\n"
+            "CRITICAL UNDERLINE/HIGHLIGHT RULE: If any text is enclosed in <mark>...</mark> or <u>...</u>, you MUST PRESERVE the <mark>...</mark> tags strictly around the exact corresponding translated phrase. Do NOT mark words that were not marked in the source, do NOT mark following unhighlighted sentences, and do NOT omit the <mark> tags.\n"
+            "TABLES: If text contains a table, preserve row-by-row lines and numbers, translating only headers and labels.\n"
             "Return ONLY the direct translation."
         )
         if retry_reason:
@@ -108,8 +120,12 @@ class TranslatorAgent:
 
     @with_backoff()
     def _translate_batch_call(self, batch_text: str, source_name: str, target_name: str) -> str:
-        chain = self._build_batch_chain(source_name, target_name)
-        result = chain.invoke({"batch_text": batch_text})
+        chain = self._build_batch_chain()
+        result = chain.invoke({
+            "batch_text": batch_text,
+            "source_name": source_name,
+            "target_name": target_name,
+        })
         return str(result).strip()
 
     @with_backoff()
@@ -124,8 +140,60 @@ class TranslatorAgent:
         })
         return str(result).strip()
 
+    def _recover_missing_inline_marks(self, original: str, translated: str, source_name: str, target_name: str) -> str:
+        """Rescate inteligente: si la traducción olvidó <mark>, localiza la frase equivalente y la envuelve."""
+        spans = re.findall(r"<(?:mark|u)>(.*?)</(?:mark|u)>", original, flags=re.DOTALL)
+        if not spans or not translated:
+            return translated
+
+        res_text = translated
+        for raw_sp in spans:
+            clean_sp = re.sub(r"\s+", " ", raw_sp).strip()
+            if len(clean_sp) < 3:
+                continue
+
+            try:
+                # Traducir el fragmento subrayado individualmente
+                trans_sp = self._translate_one(clean_sp, source_name, target_name)
+                trans_sp = re.sub(r"</?(?:mark|u)>", "", trans_sp).strip()
+                if not trans_sp or len(trans_sp) < 3:
+                    continue
+
+                # 1. Coincidencia exacta directa
+                if trans_sp in res_text and f"<mark>{trans_sp}</mark>" not in res_text:
+                    res_text = res_text.replace(trans_sp, f"<mark>{trans_sp}</mark>", 1)
+                    continue
+
+                # 2. Coincidencia flexible por regex tolerante a puntuación y espacios
+                flex_sp = _build_flexible_phrase_regex(trans_sp)
+                if flex_sp:
+                    m_f = re.search(flex_sp, res_text, flags=re.IGNORECASE)
+                    if m_f:
+                        m_str = m_f.group(0).rstrip()
+                        res_text = res_text[:m_f.start()] + f"<mark>{m_str}</mark>" + res_text[m_f.start() + len(m_str):]
+                        continue
+
+                # 3. Anclas por prefijo y sufijo con estricto límite de longitud
+                sp_words = trans_sp.split()
+                if len(sp_words) >= 5:
+                    p_pat = r"\s+".join(re.escape(w) for w in sp_words[:3])
+                    s_pat = r"\s+".join(re.escape(w) for w in sp_words[-3:])
+                    m_p = re.search(p_pat, res_text, flags=re.IGNORECASE)
+                    if m_p:
+                        m_s = re.search(s_pat, res_text[m_p.start():], flags=re.IGNORECASE)
+                        if m_s:
+                            abs_end = m_p.start() + m_s.end()
+                            matched = res_text[m_p.start():abs_end]
+                            if abs(len(matched.split()) - len(sp_words)) <= max(2, int(len(sp_words) * 0.25)):
+                                res_text = res_text[:m_p.start()] + f"<mark>{matched}</mark>" + res_text[abs_end:]
+                                continue
+            except Exception as e:
+                logger.debug("Error rescatando marca inline: %s", e)
+
+        return res_text
+
     def _process_single_batch(self, batch: List[Segment], source_name: str, target_name: str) -> List[Segment]:
-        """Procesa un lote de 6-8 párrafos en una única llamada LLM."""
+        """Procesa un lote de 6-8 párrafos en una única llamada LLM con verificación de subrayado."""
         batch_input = "\n\n".join(f"[P_{s.id}]\n{s.original}" for s in batch)
         try:
             raw_response = self._translate_batch_call(batch_input, source_name, target_name)
@@ -140,7 +208,11 @@ class TranslatorAgent:
             def _sanitize_trans(txt: str) -> str:
                 if not txt:
                     return ""
-                return clean_math_display(repair_academic_symbols_and_ligatures(txt.strip()))
+                clean = txt.strip()
+                clean = re.sub(r"^```(?:markdown|latex|text)?\s*", "", clean)
+                clean = re.sub(r"\s*```$", "", clean)
+                clean = clean_math_display(repair_academic_symbols_and_ligatures(clean))
+                return clean.strip()
 
             for seg in batch:
                 if str(seg.id) in parsed_dict and parsed_dict[str(seg.id)]:
@@ -152,12 +224,35 @@ class TranslatorAgent:
                     seg.translated = _sanitize_trans(self._translate_one(seg.original, source_name, target_name))
                     seg.status = "traducido"
 
+                # Verificación de integridad de marcas de subrayado <mark>...</mark>
+                has_orig_mark = ("<mark>" in seg.original or "<u>" in seg.original)
+                has_trans_mark = ("<mark>" in seg.translated or "<u>" in seg.translated)
+                if has_orig_mark and not has_trans_mark:
+                    logger.warning("[Translator] Segmento %d perdió las etiquetas de subrayado en lote. Reintentando...", seg.id)
+                    try:
+                        retried = self._translate_one(
+                            seg.original, source_name, target_name,
+                            retry_reason="DEBE PRESERVAR las etiquetas <mark>...</mark> estrictamente alrededor de la frase traducida correspondiente al texto subrayado."
+                        )
+                        retried_san = _sanitize_trans(retried)
+                        if "<mark>" in retried_san or "<u>" in retried_san:
+                            seg.translated = retried_san
+                        else:
+                            seg.translated = self._recover_missing_inline_marks(seg.original, seg.translated, source_name, target_name)
+                    except Exception as ret_err:
+                        logger.debug("Error en reintento de subrayado para seg %d: %s", seg.id, ret_err)
+                        seg.translated = self._recover_missing_inline_marks(seg.original, seg.translated, source_name, target_name)
+
         except Exception as exc:  # noqa: BLE001
             logger.error("[Translator] Fallo en lote de %d segmentos: %s. Aplicando fallback individual...", len(batch), exc)
             for seg in batch:
                 try:
                     seg.translated = clean_math_display(repair_academic_symbols_and_ligatures(self._translate_one(seg.original, source_name, target_name)))
                     seg.status = "traducido"
+                    has_orig_mark = ("<mark>" in seg.original or "<u>" in seg.original)
+                    has_trans_mark = ("<mark>" in seg.translated or "<u>" in seg.translated)
+                    if has_orig_mark and not has_trans_mark:
+                        seg.translated = self._recover_missing_inline_marks(seg.original, seg.translated, source_name, target_name)
                 except Exception as inner_exc:  # noqa: BLE001
                     seg.status = "error"
                     seg.validation_notes.append(f"Error de traducción: {inner_exc}")

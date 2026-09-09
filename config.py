@@ -36,7 +36,7 @@ def _get_conf(key: str, default: str = "") -> str:
 class Settings:
     # --- Credenciales / modelo ---
     GEMINI_API_KEY: str = _get_conf("GEMINI_API_KEY", "")
-    GEMINI_MODEL: str = _get_conf("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    GEMINI_MODEL: str = _get_conf("GEMINI_MODEL", "gemini-3.5-flash-lite")
     GEMINI_EMBEDDING_MODEL: str = _get_conf("GEMINI_EMBEDDING_MODEL", "models/text-embedding-004")
 
     # --- Idiomas (por defecto Paper en Inglés -> Español) ---
@@ -60,7 +60,7 @@ class Settings:
 
     # --- Rendimiento y Concurrencia de Traducción ---
     DEFAULT_BATCH_SIZE: int = int(os.getenv("DEFAULT_BATCH_SIZE", "16"))  # 16 párrafos por llamada (aceleración 5x-8x)
-    DEFAULT_MAX_WORKERS: int = int(os.getenv("DEFAULT_MAX_WORKERS", "5"))   # 5 hilos concurrentes
+    DEFAULT_MAX_WORKERS: int = int(os.getenv("DEFAULT_MAX_WORKERS", "3"))   # 3 hilos concurrentes
 
     # --- Segmentación de texto ---
     MAX_CHARS_PER_SEGMENT: int = int(os.getenv("MAX_CHARS_PER_SEGMENT", "1200"))

@@ -106,8 +106,8 @@ class ValidatorAgent:
         return []
 
     def validate_segment(self, seg: Segment, source_lang: str = "auto", target_lang: str = "es") -> bool:
-        # Segmentos de referencia o fórmulas se asumen válidos directamente
-        if seg.element_type in ["reference", "formula"]:
+        # Segmentos de referencia, fórmulas o tablas se asumen válidos directamente
+        if seg.element_type in ["reference", "formula", "authors", "table"]:
             seg.status = "ok"
             seg.validation_notes = []
             return True
@@ -137,6 +137,15 @@ class ValidatorAgent:
             problems.append(
                 "Términos no traducidos detectados: " + ", ".join(untranslated[:5])
             )
+
+        # Verificar preservación de fragmentos subrayados (<mark> o <u>)
+        has_orig_mark = ("<mark>" in seg.original or "<u>" in seg.original)
+        has_trans_mark = ("<mark>" in seg.translated or "<u>" in seg.translated)
+        if has_orig_mark and not has_trans_mark:
+            problems.append("Las marcas de subrayado original (<mark>) se perdieron en la traducción.")
+        elif has_trans_mark:
+            if seg.translated.count("<mark>") != seg.translated.count("</mark>") or seg.translated.count("<u>") != seg.translated.count("</u>"):
+                problems.append("Etiquetas de subrayado (<mark>/<u>) mal cerradas en la traducción.")
 
         if problems:
             seg.status = "sospechoso"
